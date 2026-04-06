@@ -22,10 +22,21 @@ dev/
 # Results file
 results.tsv
 
-# Credentials (never commit)
+# Credentials — NEVER commit (belt-and-suspenders)
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+*secret*
+!check-secrets.sh
 
 # Generated images
 card.png
 timeline.png
 analogy.png
+*.generated.png
+
+# Logs
+cron.log
+run.log

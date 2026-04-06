@@ -353,14 +353,28 @@ Note: GitHub Actions doesn't have Ollama, so the bot uses the fallback template.
 
 ### Security: Keeping API Keys Private
 
-#### What's already protected
+#### What's already protected (5 layers)
 
 | Layer | Status | How |
 |-------|--------|-----|
-| `.env` gitignored | **YES** | `.gitignore` blocks `.env` from being committed |
+| `.env` gitignored | **YES** | `.gitignore` blocks `.env` and `.env.*` from commit |
 | `.env.example` has no real keys | **YES** | Only placeholder text, safe to commit |
 | Bot reads from env vars | **YES** | Keys loaded from `.env` or `$ENV`, never hardcoded in code |
 | GitHub Actions uses secrets | **YES** | Keys stored in encrypted repo secrets, never in YAML |
+| **Pre-commit hook blocks leaks** | **YES** | `check-secrets.sh` scans every commit for real keys |
+
+#### Pre-Commit Secret Scanner (installed)
+
+A git pre-commit hook (`check-secrets.sh`) runs automatically before every commit and **blocks** it if:
+- `.env` is staged
+- Any file contains a real-looking API key (20+ char alphanumeric assigned to KEY/SECRET/TOKEN vars)
+- Any OpenAI (`sk-`), Anthropic (`sk-ant-`), or AWS (`AKIA`) key pattern is found
+
+The hook is already installed. To reinstall after a fresh clone:
+```bash
+cp check-secrets.sh .git/hooks/pre-commit
+chmod +x .git/hooks/pre-commit
+```
 
 #### What to watch out for
 
