@@ -8,7 +8,9 @@ creates a social card image, and posts to X with the image attached.
 Setup: see SETUP STEPS below or research-karpathy-ai.md
 
 Requirements:
-    pip install feedparser tweepy pillow requests
+    pip install tweepy pillow requests
+
+    No feedparser needed — uses Python's built-in xml.etree + urllib (zero deps for RSS).
 
 Optional (for better summaries):
     curl -fsSL https://ollama.com/install.sh | sh && ollama pull llama3
@@ -81,8 +83,7 @@ FALLBACK_TEMPLATE = """This Week in Karpathy, Vol. {week_num}:
 
 {bullets}
 
-The man doesn't rest. Neither should your RSS reader.
-
+He doesn't rest. Neither should your feed.
 #AI #Karpathy"""
 
 # ---------------------------------------------------------------------------
@@ -91,29 +92,72 @@ The man doesn't rest. Neither should your RSS reader.
 
 def fetch_weekly_items(days=7):
     """Fetch items from all feeds published in the last N days."""
-    try:
-        import feedparser
-    except ImportError:
-        print("ERROR: pip install feedparser")
-        sys.exit(1)
+    import xml.etree.ElementTree as ET
+    from urllib.request import urlopen, Request
+    from urllib.error import URLError
 
     cutoff = datetime.datetime.now() - datetime.timedelta(days=days)
     items = []
 
     for url in FEEDS:
         try:
-            feed = feedparser.parse(url)
-            for entry in feed.entries:
-                if hasattr(entry, "published_parsed") and entry.published_parsed:
-                    published = datetime.datetime(*entry.published_parsed[:6])
-                    if published > cutoff:
-                        items.append({
-                            "title": entry.title.strip(),
-                            "link": entry.link,
-                            "date": published.strftime("%b %d"),
-                            "source": url.split("/")[2],
-                        })
-        except Exception as e:
+            req = Request(url, headers={"User-Agent": "KarpathyWeeklyBot/1.0"})
+            with urlopen(req, timeout=15) as resp:
+                raw = resp.read()
+            root = ET.fromstring(raw)
+
+            # Handle both RSS and Atom feeds
+            ns = {"atom": "http://www.w3.org/2005/Atom"}
+            entries = root.findall(".//item")  # RSS
+            if not entries:
+                entries = root.findall(".//atom:entry", ns)  # Atom
+
+            for entry in entries:
+                # Title
+                title_el = entry.find("title") or entry.find("atom:title", ns)
+                title = title_el.text.strip() if title_el is not None and title_el.text else ""
+
+                # Link
+                link_el = entry.find("link") or entry.find("atom:link", ns)
+                link = ""
+                if link_el is not None:
+                    link = link_el.text or link_el.get("href", "")
+
+                # Date — try multiple fields
+                date_str = None
+                for tag in ["pubDate", "published", "updated",
+                            "atom:published", "atom:updated"]:
+                    el = entry.find(tag) or entry.find(tag, ns)
+                    if el is not None and el.text:
+                        date_str = el.text.strip()
+                        break
+
+                published = None
+                if date_str:
+                    for fmt in [
+                        "%a, %d %b %Y %H:%M:%S %z",   # RSS pubDate
+                        "%a, %d %b %Y %H:%M:%S %Z",
+                        "%Y-%m-%dT%H:%M:%S%z",         # Atom ISO
+                        "%Y-%m-%dT%H:%M:%SZ",
+                        "%Y-%m-%dT%H:%M:%S.%f%z",
+                        "%Y-%m-%d",
+                    ]:
+                        try:
+                            published = datetime.datetime.strptime(date_str, fmt)
+                            if published.tzinfo:
+                                published = published.replace(tzinfo=None)
+                            break
+                        except ValueError:
+                            continue
+
+                if published and published > cutoff and title:
+                    items.append({
+                        "title": title,
+                        "link": link.strip(),
+                        "date": published.strftime("%b %d"),
+                        "source": url.split("/")[2],
+                    })
+        except (URLError, ET.ParseError, Exception) as e:
             print(f"  WARN: failed to fetch {url}: {e}")
 
     # Deduplicate by title similarity
@@ -159,7 +203,7 @@ def generate_with_ollama(items, week_num):
 
 def generate_fallback(items, week_num):
     """Simple template fallback when Ollama isn't available."""
-    bullets = "\n".join(f"• {it['title']}" for it in items[:4])
+    bullets = "\n".join(f"• {it['title'][:50]}" for it in items[:3])
     return FALLBACK_TEMPLATE.format(week_num=week_num, bullets=bullets).strip()
 
 
@@ -212,12 +256,12 @@ def create_social_card(bullets, week_label, output_path="card.png"):
     draw.line([(60, 90), (W - 60, 90)], fill="#e94560", width=2)
 
     # Bullets
-    y = 120
+    y = 115
     for bullet in bullets[:5]:
-        wrapped = textwrap.fill(f"• {bullet}", width=55)
+        wrapped = textwrap.fill(f"• {bullet}", width=60)
         draw.text((60, y), wrapped, fill="#ffffff", font=body_font)
         line_count = len(wrapped.split("\n"))
-        y += line_count * 35 + 15
+        y += line_count * 30 + 10
 
     # Footer
     draw.text((60, H - 50), "github.com/karpathy", fill="#888888", font=body_font)
