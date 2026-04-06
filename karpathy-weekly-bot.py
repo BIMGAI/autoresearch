@@ -312,7 +312,7 @@ def load_x_credentials():
                 creds[key.strip()] = val.strip().strip('"').strip("'")
 
     # Environment variables override .env
-    for key in ["X_CONSUMER_KEY", "X_CONSUMER_SECRET", "X_ACCESS_TOKEN", "X_ACCESS_TOKEN_SECRET"]:
+    for key in ["X_CONSUMER_KEY", "X_CONSUMER_SECRET", "X_ACCESS_TOKEN", "X_ACCESS_TOKEN_SECRET", "X_BEARER_TOKEN"]:
         if os.environ.get(key):
             creds[key] = os.environ[key]
 
@@ -363,6 +363,7 @@ def post_to_x(text, image_path=None):
     # Handle thread (split on ---)
     tweets = [t.strip() for t in text.split("---") if t.strip()]
     reply_to = None
+    tweet_url = None
 
     for i, tweet_text in enumerate(tweets):
         kwargs = {"text": tweet_text}
@@ -371,11 +372,31 @@ def post_to_x(text, image_path=None):
         if reply_to:
             kwargs["in_reply_to_tweet_id"] = reply_to
 
-        response = client.create_tweet(**kwargs)
-        tweet_id = response.data["id"]
-        if i == 0:
-            reply_to = tweet_id
-            tweet_url = f"https://x.com/i/status/{tweet_id}"
+        try:
+            response = client.create_tweet(**kwargs)
+            tweet_id = response.data["id"]
+            if i == 0:
+                reply_to = tweet_id
+                tweet_url = f"https://x.com/i/status/{tweet_id}"
+        except Exception as e:
+            print(f"  ERROR posting tweet: {e}")
+            # Try with Bearer Token (OAuth 2.0 App-Only) as fallback
+            if "X_BEARER_TOKEN" in creds or os.environ.get("X_BEARER_TOKEN"):
+                try:
+                    bearer = creds.get("X_BEARER_TOKEN") or os.environ["X_BEARER_TOKEN"]
+                    client2 = tweepy.Client(bearer_token=bearer)
+                    response = client2.create_tweet(**kwargs)
+                    tweet_id = response.data["id"]
+                    if i == 0:
+                        reply_to = tweet_id
+                        tweet_url = f"https://x.com/i/status/{tweet_id}"
+                    print(f"  OK: Posted with Bearer Token fallback")
+                except Exception as e2:
+                    print(f"  ERROR Bearer Token fallback also failed: {e2}")
+                    return None
+            else:
+                print("  TIP: Add X_BEARER_TOKEN to secrets for fallback auth")
+                return None
 
     return tweet_url
 
