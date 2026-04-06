@@ -131,11 +131,15 @@ def fetch_weekly_items(days=7):
 
             for entry in entries:
                 # Title
-                title_el = entry.find("title") or entry.find("atom:title", ns)
+                title_el = entry.find("title")
+                if title_el is None:
+                    title_el = entry.find("atom:title", ns)
                 title = title_el.text.strip() if title_el is not None and title_el.text else ""
 
                 # Link
-                link_el = entry.find("link") or entry.find("atom:link", ns)
+                link_el = entry.find("link")
+                if link_el is None:
+                    link_el = entry.find("atom:link", ns)
                 link = ""
                 if link_el is not None:
                     link = link_el.text or link_el.get("href", "")
@@ -144,7 +148,9 @@ def fetch_weekly_items(days=7):
                 date_str = None
                 for tag in ["pubDate", "published", "updated",
                             "atom:published", "atom:updated"]:
-                    el = entry.find(tag) or entry.find(tag, ns)
+                    el = entry.find(tag)
+                    if el is None:
+                        el = entry.find(tag, ns)
                     if el is not None and el.text:
                         date_str = el.text.strip()
                         break
@@ -341,15 +347,18 @@ def post_to_x(text, image_path=None):
 
     media_ids = []
     if image_path and Path(image_path).exists():
-        auth = tweepy.OAuth1UserHandler(
-            consumer_key=creds["X_CONSUMER_KEY"],
-            consumer_secret=creds["X_CONSUMER_SECRET"],
-            access_token=creds["X_ACCESS_TOKEN"],
-            access_token_secret=creds["X_ACCESS_TOKEN_SECRET"],
-        )
-        api = tweepy.API(auth)
-        media = api.media_upload(image_path)
-        media_ids = [media.media_id]
+        try:
+            auth = tweepy.OAuth1UserHandler(
+                consumer_key=creds["X_CONSUMER_KEY"],
+                consumer_secret=creds["X_CONSUMER_SECRET"],
+                access_token=creds["X_ACCESS_TOKEN"],
+                access_token_secret=creds["X_ACCESS_TOKEN_SECRET"],
+            )
+            api = tweepy.API(auth)
+            media = api.media_upload(image_path)
+            media_ids = [media.media_id]
+        except Exception as e:
+            print(f"  WARN: Image upload failed ({e}), posting text only")
 
     # Handle thread (split on ---)
     tweets = [t.strip() for t in text.split("---") if t.strip()]
