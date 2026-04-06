@@ -303,7 +303,150 @@ Run with cron: `0 9 * * 1 python3 karpathy_digest.py` (every Monday 9am)
 - Prompt: "Summarize these updates in 3-5 bullet points. Highlight any new repos, releases, or major announcements."
 - Attach the summary to the delivery step below
 
-### Step 3: Send the Snapshot — Cost Comparison
+### Step 3: X Account — Funny Weekly Commentator Tone
+
+**MVP channel: X only.** One post per week, funny commentator voice. Expand to LinkedIn/Email/SMS later when audience justifies it.
+
+#### The Voice: Weekend Update Meets Tech Twitter
+
+Think SNL Weekend Update meets tech Twitter. Deadpan delivery, absurd analogies, genuine insight underneath the jokes. The formula:
+
+**Opening hook** (absurd observation) → **2-3 punchline bullets** (real news, funny framing) → **Closer** (one-liner takeaway) → **Card image**
+
+#### X Post Templates
+
+**Template A: "This Week in Karpathy"**
+```
+This Week in Karpathy, Vol. {n}:
+
+The man wrote a whole GPT in 200 lines.
+Meanwhile I wrote 200 lines of YAML to deploy a button.
+
+What happened:
+- Released [thing]. It's [X] lines of code. Your node_modules folder is crying.
+- Blogged about [topic]. TL;DR: [funny one-liner summary]
+- His house robot now controls the pool. Your Alexa still can't set a timer.
+
+He's speedrunning the field while we're still on the tutorial level.
+```
+
+**Template B: "Karpathy Diff"**
+```
+karpathy.diff — week of {date}
+
++ mass autonomous experimentation
++ house now fully sentient (friendly)
++ new blog post (absolute banger)
+- mass free time
+- your mass confidence as a developer
+- any excuse not to learn ML
+
+patch notes for the rest of us: we're cooked
+```
+
+**Template C: "Breaking News" (deadpan)**
+```
+BREAKING: Local man builds ChatGPT for the price of a nice dinner,
+publishes code, goes back to making his house talk to itself
+
+In other news:
+- [real update, funny angle]
+- [real update, funny angle]
+
+Scientists warn he may be "two git pushes away from mass singularity
+in his living room"
+```
+
+**Template D: "Scoreboard"**
+```
+Karpathy vs. The Rest of Us — Weekly Scoreboard
+
+Karpathy:
+  experiments run mass this week: 700
+  apps replaced by one agent: 6
+  lines of code for a full GPT: 200
+
+You:
+  mass mass browser tabs open: 47
+  mass mass mass mass mass mass mass mass mass mass mass mass: "tomorrow"
+  mass mass mass mass mass status: "still loading"
+
+See you next week. Bring mass snacks.
+```
+
+#### LLM Prompt for Auto-Generating Funny Posts ($0 — Ollama)
+
+```python
+import requests
+
+def generate_funny_post(raw_items, week_num):
+    items_text = "\n".join(f"- {item}" for item in raw_items)
+    response = requests.post("http://localhost:11434/api/generate", json={
+        "model": "llama3",
+        "prompt": f"""You are a funny weekly AI commentator on X/Twitter.
+Your style: SNL Weekend Update meets tech Twitter. Deadpan, absurd
+analogies, self-deprecating humor about the rest of us. Genuine insight
+under the jokes. Never cringe, never try-hard.
+
+Here are this week's Andrej Karpathy updates:
+{items_text}
+
+Write a single X post (under 280 chars) or a short thread (2-3 tweets max).
+Pick the best format for this week's news:
+- "This Week in Karpathy" (bullets with punchlines)
+- "karpathy.diff" (git diff +/- jokes)
+- "BREAKING" (deadpan fake news)
+- "Scoreboard" (Karpathy vs. rest of us)
+
+Be genuinely funny. The humor makes it shareable, the real info makes
+it valuable. End with a one-liner that lands.
+
+Week number: {week_num}""",
+        "stream": False
+    })
+    return response.json()["response"]
+```
+
+#### Auto-Post to X with Image ($0)
+
+```python
+import tweepy
+
+client = tweepy.Client(
+    consumer_key="...", consumer_secret="...",
+    access_token="...", access_token_secret="...",
+)
+auth = tweepy.OAuth1UserHandler(
+    consumer_key="...", consumer_secret="...",
+    access_token="...", access_token_secret="...",
+)
+api = tweepy.API(auth)
+
+# Generate the funny post
+post_text = generate_funny_post(weekly_items, week_num)
+
+# Attach social card
+media = api.media_upload("card.png")
+client.create_tweet(text=post_text, media_ids=[media.media_id])
+```
+
+Setup (one-time, 15 min):
+1. developer.x.com → create a Free app (1,500 tweets/month)
+2. Generate consumer keys + access tokens
+3. `pip install tweepy`
+
+#### Channels to Add Later (When Audience Grows)
+
+| Milestone | Add channel | Cost |
+|-----------|------------|------|
+| 500 followers | LinkedIn (same tone, slightly longer) | $0 |
+| 2,000 followers | Email newsletter (Buttondown free tier) | $0 |
+| 5,000 followers | SMS to VIP list (Twilio) | ~$0.03/mo |
+| 10,000 followers | Substack or paid newsletter | $0 (rev share) |
+
+---
+
+### Archived: Other Channel Setup (for later upgrades)
 
 | Channel | Cost | Setup | Best for |
 |---------|------|-------|----------|
@@ -408,22 +551,21 @@ Setup:
 2. Get a phone number (~$1.15/month)
 3. `pip install twilio` → use the script above
 
-### Step 3b: The $0 MVP Pipeline
+### Step 3c: The $0 MVP Pipeline (X Only)
 
-Everything below costs **$0/week**. No paid APIs, no subscriptions. Upgrade only when audience revenue pays for it.
+Everything below costs **$0/week**. One channel, one voice, one post. Expand later.
 
 ```
 [Cron: Monday 9am]
-    → [Python + feedparser fetches RSS]     — $0
-    → [Ollama local LLM summarizes]         — $0
-    → [Ollama generates analogy prompt]     — $0
-    → [Stable Diffusion generates image]    — $0 (or skip if no GPU)
-    → [Pillow generates social card]        — $0
-    → [Mermaid generates timeline diagram]  — $0
-    → [Post to X via tweepy + image]        — $0 (Free tier)
-    → [Post to LinkedIn via API + image]    — $0
-    → [Email digest via Gmail smtplib]      — $0
-                                      Total: $0/week
+    → [feedparser fetches RSS feeds]          — $0
+    → [Ollama summarizes into bullets]        — $0
+    → [Ollama generates funny X post]         — $0
+    → [Ollama generates analogy prompt]       — $0
+    → [Pillow generates social card]          — $0
+    → [Stable Diffusion generates analogy]    — $0 (skip if no GPU)
+    → [Mermaid generates timeline]            — $0
+    → [tweepy posts to X with card image]     — $0 (Free tier)
+                                        Total: $0/week
 ```
 
 ### Step 4: Auto-Generate Visuals ($0 Only)
