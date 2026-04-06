@@ -408,80 +408,47 @@ Setup:
 2. Get a phone number (~$1.15/month)
 3. `pip install twilio` → use the script above
 
-### Step 3b: The $0 Weekly Pipeline (Recommended)
+### Step 3b: The $0 MVP Pipeline
 
-The absolute cheapest end-to-end setup:
+Everything below costs **$0/week**. No paid APIs, no subscriptions. Upgrade only when audience revenue pays for it.
 
 ```
 [Cron: Monday 9am]
-    → [Python script fetches RSS feeds]        — $0
-    → [Summarize with local LLM or free tier]  — $0 (Ollama local, or Claude free tier)
-    → [Post to X via tweepy]                   — $0
-    → [Post to LinkedIn via API]               — $0
-    → [Email to contact list via Gmail]         — $0
-                                         Total: $0/week
+    → [Python + feedparser fetches RSS]     — $0
+    → [Ollama local LLM summarizes]         — $0
+    → [Ollama generates analogy prompt]     — $0
+    → [Stable Diffusion generates image]    — $0 (or skip if no GPU)
+    → [Pillow generates social card]        — $0
+    → [Mermaid generates timeline diagram]  — $0
+    → [Post to X via tweepy + image]        — $0 (Free tier)
+    → [Post to LinkedIn via API + image]    — $0
+    → [Email digest via Gmail smtplib]      — $0
+                                      Total: $0/week
 ```
 
-If you want to add SMS for one VIP contact: +$0.03/month (4 texts).
+### Step 4: Auto-Generate Visuals ($0 Only)
 
-### Step 4: Auto-Generate Visuals and Analogies
+Posts with images get **2-3x more engagement** on X and **3-5x on LinkedIn**. All tools below are free.
 
-Posts with images get **2-3x more engagement** on X and **3-5x on LinkedIn**. Auto-generate them from your digest data so every weekly post ships with a visual.
+#### MVP Visual Kit (3 images per week, all $0)
 
-#### Tool Comparison (Cheapest First)
+| Visual | Tool | What it does |
+|--------|------|-------------|
+| **Social card** | Pillow | Branded image with week's bullets |
+| **Timeline** | Mermaid CLI | Visual timeline of the week's events |
+| **Analogy image** | Ollama + Stable Diffusion | LLM writes metaphor, SD illustrates it |
 
-| Tool | Cost | Output | Best for |
-|------|------|--------|----------|
-| **Mermaid** (CLI/API) | $0 | Flowcharts, timelines, diagrams | Architecture/relationship diagrams |
-| **matplotlib / Pillow** | $0 | Charts, branded cards | Data viz, social cards |
-| **Excalidraw** (auto via JSON) | $0 | Hand-drawn style diagrams | Approachable, informal look |
-| **AI image gen** (DALL-E) | ~$0.04/img | Analogy illustrations | Eye-catching metaphor visuals |
-| **Stable Diffusion** (local) | $0 | Analogy illustrations | Free if you have a GPU |
-| **Carbon** (code screenshots) | $0 | Pretty code snippets | Sharing code highlights |
-
-#### A. Auto-Generate a Timeline Diagram ($0 — Mermaid)
-
-Turn each week's digest into a visual timeline automatically:
-
-```python
-def generate_mermaid_timeline(items):
-    """Generate a Mermaid timeline from digest items."""
-    lines = ["timeline", "    title Karpathy This Week"]
-    for item in items:
-        # Truncate to fit diagram
-        title = item["title"][:50]
-        lines.append(f"    {item['date']} : {title}")
-    return "\n".join(lines)
-
-# Example output:
-# timeline
-#     title Karpathy This Week
-#     Apr 01 : AutoResearch v2 released
-#     Apr 03 : New blog post on agent patterns
-#     Apr 05 : Dobby gains pool temperature control
-```
-
-Render to PNG:
-```bash
-# Install: npm install -g @mermaid-js/mermaid-cli
-mmdc -i timeline.mmd -o timeline.png -t dark -b transparent
-```
-
-#### B. Auto-Generate a Social Media Card ($0 — Pillow)
-
-Branded image card for X/LinkedIn with the week's highlights:
+#### A. Social Card (Pillow — $0)
 
 ```python
 from PIL import Image, ImageDraw, ImageFont
 import textwrap
 
 def create_social_card(bullets, week_label, output_path="card.png"):
-    """Generate a branded social card from digest bullets."""
-    W, H = 1200, 675  # X/LinkedIn optimal size
+    W, H = 1200, 675  # X/LinkedIn optimal
     img = Image.new("RGB", (W, H), color="#1a1a2e")
     draw = ImageDraw.Draw(img)
 
-    # Header
     try:
         title_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 36)
         body_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 24)
@@ -492,93 +459,75 @@ def create_social_card(bullets, week_label, output_path="card.png"):
     draw.text((60, 40), f"Karpathy Weekly — {week_label}", fill="#e94560", font=title_font)
     draw.line([(60, 90), (W - 60, 90)], fill="#e94560", width=2)
 
-    # Bullets
     y = 120
     for bullet in bullets[:5]:
         wrapped = textwrap.fill(f"• {bullet}", width=55)
         draw.text((60, y), wrapped, fill="#ffffff", font=body_font)
         y += len(wrapped.split("\n")) * 35 + 15
 
-    # Footer
     draw.text((60, H - 50), "github.com/karpathy  •  karpathy.bearblog.dev",
               fill="#888888", font=body_font)
-
     img.save(output_path)
     return output_path
-
-# Usage:
-create_social_card(
-    bullets=["Released AutoResearch v2 with multi-agent support",
-             "New blog: 'Why RSS beats algorithms'",
-             "Dobby now controls 12 device types"],
-    week_label="Week of Apr 7, 2026"
-)
 ```
 
-#### C. Auto-Generate Analogy Graphics ($0.04/img or $0 local)
+#### B. Timeline Diagram (Mermaid — $0)
 
-Use LLM + image generation to create analogy-based visuals that make technical content accessible.
-
-**Step 1: LLM generates the analogy**
 ```python
-import anthropic
-
-client = anthropic.Anthropic()
-response = client.messages.create(
-    model="claude-sonnet-4-6",
-    max_tokens=200,
-    messages=[{
-        "role": "user",
-        "content": f"""Given this AI update: "{digest_summary}"
-
-Generate a vivid visual analogy that a non-technical person would understand.
-Format: one sentence describing an image scene.
-Example: "A robot librarian sorting glowing books on infinite shelves while
-humans sip coffee and point at favorites"
-
-Keep it concrete, colorful, and shareable."""
-    }]
-)
-analogy_prompt = response.content[0].text
+def generate_mermaid_timeline(items):
+    lines = ["timeline", "    title Karpathy This Week"]
+    for item in items:
+        title = item["title"][:50]
+        lines.append(f"    {item['date']} : {title}")
+    return "\n".join(lines)
 ```
 
-**Step 2: Generate the image**
+Render: `mmdc -i timeline.mmd -o timeline.png -t dark -b transparent`
+Install: `npm install -g @mermaid-js/mermaid-cli`
 
-Option A — DALL-E (~$0.04/image):
+#### C. Analogy Image (Ollama + Stable Diffusion — $0)
+
+**Step 1: Local LLM generates the analogy (Ollama — $0)**
 ```python
-from openai import OpenAI
-client = OpenAI()
-result = client.images.generate(
-    model="dall-e-3",
-    prompt=f"Clean, modern illustration style: {analogy_prompt}. No text in image.",
-    size="1792x1024",  # Landscape for social
-    quality="standard",
-    n=1,
-)
-image_url = result.data[0].url
+import requests
+
+def generate_analogy(digest_summary):
+    response = requests.post("http://localhost:11434/api/generate", json={
+        "model": "llama3",  # or mistral, phi3 — any local model
+        "prompt": f"""Given this AI update: "{digest_summary}"
+
+Generate a vivid visual analogy a non-technical person would understand.
+One sentence describing an image scene.
+Example: "A robot librarian sorting glowing books on infinite shelves"
+Keep it concrete, colorful, shareable.""",
+        "stream": False
+    })
+    return response.json()["response"]
 ```
 
-Option B — Stable Diffusion local ($0):
+Install: `curl -fsSL https://ollama.com/install.sh | sh && ollama pull llama3`
+
+**Step 2: Generate the image (Stable Diffusion — $0)**
 ```bash
-# Using ComfyUI or stable-diffusion-webui API
+# Using stable-diffusion-webui (AUTOMATIC1111) or ComfyUI
 curl -X POST "http://localhost:7860/sdapi/v1/txt2img" \
   -H "Content-Type: application/json" \
-  -d "{\"prompt\": \"${analogy_prompt}, clean illustration style\",
+  -d "{\"prompt\": \"${ANALOGY}, clean modern illustration, no text\",
        \"width\": 1792, \"height\": 1024, \"steps\": 20}"
 ```
 
-**Example analogies the LLM might generate:**
+**No GPU?** Skip the analogy image for MVP. The social card + timeline alone still give 2-3x engagement boost. Add analogy images when you upgrade.
 
-| Update | Analogy | Visual |
-|--------|---------|--------|
-| "AutoResearch runs 700 experiments autonomously" | "A tireless chef tasting 700 soup variations while the head chef sleeps, leaving only the best recipe on the counter by morning" | Chef robot in kitchen with soup bowls |
-| "Dobby replaces 6 apps with one agent" | "A single universal remote that speaks every language, replacing a drawer full of remotes that each only control one thing" | Glowing remote vs. pile of old remotes |
-| "microgpt: full GPT in 200 lines" | "Fitting an entire engine into a matchbox — it actually runs" | Tiny engine inside an open matchbox |
-| "RSS revival over algorithmic feeds" | "Choosing to cook from a farmers market instead of eating from a mystery vending machine" | Farmers market vs. vending machine split |
+**Example analogies:**
 
-#### D. Auto-Generate Relationship Diagrams ($0 — Mermaid)
+| Update | Analogy |
+|--------|---------|
+| "700 autonomous experiments" | Tireless chef tasting 700 soups, best recipe on counter by morning |
+| "Dobby replaces 6 apps" | One universal remote replacing a drawer of remotes |
+| "microgpt: 200 lines" | Entire engine fitted into a matchbox — it runs |
+| "RSS over algorithms" | Farmers market vs. mystery vending machine |
 
-Show how Karpathy's projects connect:
+#### D. Relationship Diagram (Mermaid — $0)
 
 ```mermaid
 graph LR
@@ -594,11 +543,7 @@ graph LR
     style I fill:#0f3460
 ```
 
-Render: `mmdc -i projects.mmd -o projects.png -t dark`
-
-#### E. Attach Visuals to Posts
-
-Update your X and LinkedIn posting scripts to include images:
+#### E. Post with Images ($0)
 
 ```python
 # X/Twitter with image
@@ -608,49 +553,44 @@ client = tweepy.Client(...)
 auth = tweepy.OAuth1UserHandler(...)
 api = tweepy.API(auth)
 
-# Upload image first
 media = api.media_upload("card.png")
-# Then tweet with media
 client.create_tweet(text=post_text, media_ids=[media.media_id])
-
-# LinkedIn with image — use registerUpload + ugcPost with media
-# (see LinkedIn Marketing API docs for image upload flow)
 ```
 
-#### F. Cost Summary for Visuals
+### Step 5: Upgrade Roadmap (When Audience Pays for It)
 
-| Visual type | Cost per week | Engagement boost |
-|-------------|---------------|------------------|
-| Social card (Pillow) | $0 | ~2x on X, ~3x on LinkedIn |
-| Timeline (Mermaid) | $0 | Clear at-a-glance summary |
-| Relationship diagram (Mermaid) | $0 | Shows ecosystem/big picture |
-| Analogy illustration (DALL-E) | ~$0.04 | Highest engagement — emotional hook |
-| Analogy illustration (local SD) | $0 | Same as above, requires GPU |
-| Code screenshot (Carbon) | $0 | Dev audience engagement |
-
-**Recommended weekly visual kit:** 1 social card ($0) + 1 analogy image ($0.04) + 1 diagram ($0) = **$0.04/week total**.
-
-### Step 5: Full Pipeline (End-to-End)
-
-Combine everything into one automated flow:
+Stay at $0 until a milestone justifies the spend. Each upgrade is independent — add only what the numbers support.
 
 ```
-[Weekly cron trigger]
-    → [Fetch RSS feeds]
-    → [Filter to last 7 days]
-    → [LLM summarizes into 3-5 bullets]
-    → [LLM generates analogy prompt]
-    → [Generate social card (Pillow)]         — $0
-    → [Generate analogy image (DALL-E/local)] — $0.04 or $0
-    → [Generate timeline diagram (Mermaid)]   — $0
-    → [Post to X with card + analogy image]   — $0
-    → [Post to LinkedIn with card]            — $0
-    → [Email digest + images to contacts]     — $0
-    → [SMS short summary to VIPs]             — $0.008
+$0 MVP (start here)
+ │
+ │  Milestone: 500 followers or first $50 in tips/sponsorship
+ │  ┌──────────────────────────────────────────────────┐
+ ├─→│ +$0.04/wk: DALL-E for analogy images             │
+ │  │  (sharper visuals, higher engagement)             │
+ │  └──────────────────────────────────────────────────┘
+ │
+ │  Milestone: 2,000 followers or $200/month revenue
+ │  ┌──────────────────────────────────────────────────┐
+ ├─→│ +$0.03/mo: Twilio SMS to VIP contacts            │
+ │  │ +$20/mo: Claude API for better summaries          │
+ │  └──────────────────────────────────────────────────┘
+ │
+ │  Milestone: 10,000 followers or $1,000/month revenue
+ │  ┌──────────────────────────────────────────────────┐
+ ├─→│ +$20/mo: Video clips (Remotion/ffmpeg + voiceover)│
+ │  │ +$10/mo: Dedicated domain + newsletter (Buttondown)│
+ │  │ +$5/mo: Custom branded templates (Canva Pro)      │
+ │  └──────────────────────────────────────────────────┘
+ │
+ │  Milestone: Positive cash flow
+ │  ┌──────────────────────────────────────────────────┐
+ └─→│ +$100/mo: Full production — multi-platform,      │
+    │  video, podcast clips, paid newsletter tier       │
+    └──────────────────────────────────────────────────┘
 ```
 
-Total: **$0.04/week** with DALL-E analogies, **$0/week** with local Stable Diffusion.
-Total setup time: ~2 hours for the full visual pipeline.
+**Rule: Never spend more than 20% of trailing 30-day revenue on tooling.**
 
 ## References
 
