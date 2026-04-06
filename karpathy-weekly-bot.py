@@ -47,44 +47,61 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 FEEDS = [
+    # --- Karpathy ---
     "https://karpathy.bearblog.dev/feed/",
     "https://github.com/karpathy.atom",
     "https://github.com/karpathy/autoresearch/releases.atom",
     "https://github.com/karpathy/nanochat/releases.atom",
     "https://github.com/karpathy/llm.c/releases.atom",
-    "https://hnrss.org/newest?q=karpathy",
+    # --- Trending AI / Tech ---
+    "https://hnrss.org/best?count=20",                          # Hacker News best
+    "https://rsshub.app/twitter/user/OpenAI",                   # OpenAI
+    "https://rsshub.app/twitter/user/AnthropicAI",              # Anthropic
+    "https://blog.google/technology/ai/rss/",                   # Google AI blog
+    "https://openai.com/blog/rss.xml",                          # OpenAI blog
+    "https://www.anthropic.com/feed.xml",                       # Anthropic blog
+    "https://simonwillison.net/atom/everything/",               # Simon Willison
+    "https://lilianweng.github.io/index.xml",                   # Lilian Weng (OpenAI)
+    "https://www.tldrai.com/feed.xml",                          # TLDR AI newsletter
+    "https://github.com/trending.atom",                         # GitHub trending
+    "https://arxiv.org/rss/cs.AI",                              # arXiv AI papers
 ]
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
 OLLAMA_MODEL = "llama3"  # change to mistral, phi3, etc.
 
-FUNNY_PROMPT = """You are a funny weekly AI commentator posting on X/Twitter.
+FUNNY_PROMPT = """You are a funny weekly AI and tech commentator on X/Twitter.
 Your style: SNL Weekend Update meets tech Twitter. Deadpan, absurd analogies,
-self-deprecating humor comparing Karpathy's output to normal developers.
-Genuine insight under the jokes. Never cringe.
+self-deprecating humor. Genuine insight under the jokes. Never cringe.
 
-Here are this week's Andrej Karpathy updates:
+Here are this week's top AI and tech updates:
 {items}
 
 Write a single X post (under 270 chars so there's room for hashtags).
 Or if there's a lot of news, write a thread (2-3 tweets, each under 270 chars,
 separated by ---).
 
-Pick the best format:
-- "This Week in Karpathy" (bullets with punchlines)
-- "karpathy.diff" (git diff +/- jokes)
+Pick the most impactful 2-3 items from the list. Prioritize:
+1. Anything genuinely new or surprising
+2. Big releases, papers, or product launches
+3. Karpathy updates (always include if present)
+4. Trending repos or viral discussions
+
+Format options:
+- "This Week in AI" (bullets with punchlines)
+- "ai.diff" (git diff +/- jokes)
 - "BREAKING" (deadpan fake news anchor)
-- "Scoreboard" (Karpathy vs. rest of us)
+- "Scoreboard" (AI labs vs. rest of us)
 
 Be genuinely funny. Real info + humor = shareable + valuable.
 End with a one-liner that lands. Week {week_num}."""
 
-FALLBACK_TEMPLATE = """This Week in Karpathy, Vol. {week_num}:
+FALLBACK_TEMPLATE = """This Week in AI, Vol. {week_num}:
 
 {bullets}
 
-He doesn't rest. Neither should your feed.
-#AI #Karpathy"""
+The machines are busy. Are you?
+#AI #Tech #LLM"""
 
 # ---------------------------------------------------------------------------
 # STEP 1: FETCH RSS FEEDS
@@ -252,7 +269,7 @@ def create_social_card(bullets, week_label, output_path="card.png"):
         body_font = ImageFont.load_default()
 
     # Header
-    draw.text((60, 40), f"Karpathy Weekly — {week_label}", fill="#e94560", font=title_font)
+    draw.text((60, 40), f"AI Weekly — {week_label}", fill="#e94560", font=title_font)
     draw.line([(60, 90), (W - 60, 90)], fill="#e94560", width=2)
 
     # Bullets
@@ -264,7 +281,7 @@ def create_social_card(bullets, week_label, output_path="card.png"):
         y += line_count * 30 + 10
 
     # Footer
-    draw.text((60, H - 50), "github.com/karpathy", fill="#888888", font=body_font)
+    draw.text((60, H - 50), "AI Weekly Digest", fill="#888888", font=body_font)
 
     img.save(output_path)
     print(f"  Card saved: {output_path}")

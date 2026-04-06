@@ -2,7 +2,7 @@ name: Karpathy Weekly
 on:
   workflow_dispatch:  # manual trigger (for first post + testing)
   schedule:
-    - cron: '0 9 * * 1'  # every Monday 9am UTC
+    - cron: '0 12 * * 1'  # every Monday 12pm UTC
 
 jobs:
   post:
