@@ -1,0 +1,27 @@
+name: Karpathy Weekly
+on:
+  workflow_dispatch:  # manual trigger (for first post + testing)
+  schedule:
+    - cron: '0 9 * * 1'  # every Monday 9am UTC
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: claude/research-karpathy-ai-YdqP7
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - run: pip install tweepy pillow requests
+
+      - name: Run Karpathy Weekly Bot
+        run: python karpathy-weekly-bot.py --post
+        env:
+          X_CONSUMER_KEY: ${{ secrets.X_CONSUMER_KEY }}
+          X_CONSUMER_SECRET: ${{ secrets.X_CONSUMER_SECRET }}
+          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
