@@ -128,41 +128,9 @@ Week {week_num}."""
 # Link goes last — clean read, then the click.
 
 X_FALLBACK_TEMPLATES = [
-    """Not this one. Don't scroll past this one.
-
-{main_item}
-
-{why_it_matters}
-
-{link} #AI""",
-
-    """Not this one. This one's real.
+    """Not this ONE.
 
 {main_item} [{source}]
-
-{why_it_matters}
-
-{link} #AI""",
-
-    """Not this one. You'll want this later.
-
-{main_item}
-
-{why_it_matters}
-
-{link} #AI #Tech""",
-
-    """The AI drop that broke the feed:
-
-{main_item} [{source}]
-
-{why_it_matters}
-
-{link} #AI""",
-
-    """This will age well.
-
-{main_item}
 
 {why_it_matters}
 
@@ -463,13 +431,7 @@ def generate_linkedin_post(items, week_num):
 
     # Build the hook (under 130 chars for "see more" visibility)
     main = picked[0]
-    hooks = [
-        f"{source_label(main['source'])} just changed the game. Here's what it means for you.",
-        f"The most important AI development this week isn't what you think.",
-        f"4 AI stories from this week that will matter in 6 months.",
-        f"While you were in meetings, AI shipped these 4 things.",
-    ]
-    hook = random.choice(hooks)
+    hook = "Not this ONE. Here's what you almost scrolled past this week."
 
     # Build 4 item blocks
     def item_block(it, num):
