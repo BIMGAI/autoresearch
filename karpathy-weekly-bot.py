@@ -185,7 +185,7 @@ REPLY_TRIGGER_QUESTIONS = [
 
 LINKEDIN_FALLBACK_TEMPLATE = """{hook}
 
-Not this ONE — the 4 AI stories worth your time this week:
+The 4 AI stories worth your time this week:
 
 ━━━━━━━━━━━━━━━
 
@@ -580,7 +580,7 @@ def generate_linkedin_post(items, week_num):
 
     # Build the hook (under 130 chars for "see more" visibility)
     main = picked[0]
-    hook = "Not this ONE. Here's what you almost scrolled past this week."
+    hook = "Not this ONE."
 
     # Build 4 item blocks
     def item_block(it, num):
