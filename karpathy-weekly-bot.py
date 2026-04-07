@@ -128,7 +128,7 @@ Week {week_num}."""
 # Link goes last — clean read, then the click.
 
 X_FALLBACK_TEMPLATES = [
-    """This just satisfies differently.
+    """Not this one. Don't scroll past this one.
 
 {main_item}
 
@@ -136,21 +136,21 @@ X_FALLBACK_TEMPLATES = [
 
 {link} #AI""",
 
-    """Not clickbait. Just the #1 AI story this week.
+    """Not this one. This one's real.
 
 {main_item} [{source}]
 
 {why_it_matters}
 
-{link}""",
+{link} #AI""",
 
-    """Everyone's talking about this one.
+    """Not this one. You'll want this later.
 
 {main_item}
 
 {why_it_matters}
 
-{link} #AI""",
+{link} #AI #Tech""",
 
     """The AI drop that broke the feed:
 
@@ -158,7 +158,7 @@ X_FALLBACK_TEMPLATES = [
 
 {why_it_matters}
 
-{link} #AI #Tech""",
+{link} #AI""",
 
     """This will age well.
 
