@@ -58,20 +58,27 @@ FEEDS = [
     "https://blog.google/technology/ai/rss/",                    # Google AI
     "https://openai.com/blog/rss.xml",                           # OpenAI
     # --- From Karpathy's curated 92 feeds (AI/tech picks) ---
-    "https://simonwillison.net/atom/everything/",                # Simon Willison (AI tools)
-    "https://lilianweng.github.io/index.xml",                    # Lilian Weng (OpenAI research)
-    "https://minimaxir.com/index.xml",                           # Max Woolf (AI/ML)
-    "https://garymarcus.substack.com/feed",                      # Gary Marcus (AI criticism)
-    "https://geohot.github.io/blog/feed.xml",                    # George Hotz (tinygrad)
-    "https://gwern.substack.com/feed",                           # Gwern (deep research)
-    "https://dynomight.net/feed.xml",                            # Dynomight (data/tech)
-    "https://pluralistic.net/feed/",                             # Cory Doctorow (tech policy)
-    "https://mitchellh.com/feed.xml",                            # Mitchell Hashimoto (infra)
-    "https://lucumr.pocoo.org/feed.atom",                        # Armin Ronacher (Flask/Rust)
-    "https://overreacted.io/rss.xml",                            # Dan Abramov (React)
-    "https://www.dwarkeshpatel.com/feed",                        # Dwarkesh Patel (AI interviews)
-    "https://eli.thegreenplace.net/feeds/all.atom.xml",          # Eli Bendersky (compilers/AI)
-    "https://berthub.eu/articles/index.xml",                     # Bert Hubert (DNS/tech)
+    "https://simonwillison.net/atom/everything/",                # Simon Willison
+    "https://lilianweng.github.io/index.xml",                    # Lilian Weng
+    "https://minimaxir.com/index.xml",                           # Max Woolf
+    "https://garymarcus.substack.com/feed",                      # Gary Marcus
+    "https://geohot.github.io/blog/feed.xml",                    # George Hotz
+    "https://gwern.substack.com/feed",                           # Gwern
+    "https://dynomight.net/feed.xml",                            # Dynomight
+    "https://pluralistic.net/feed/",                             # Cory Doctorow
+    "https://mitchellh.com/feed.xml",                            # Mitchell Hashimoto
+    "https://lucumr.pocoo.org/feed.atom",                        # Armin Ronacher
+    "https://overreacted.io/rss.xml",                            # Dan Abramov
+    "https://www.dwarkeshpatel.com/feed",                        # Dwarkesh Patel
+    "https://eli.thegreenplace.net/feeds/all.atom.xml",          # Eli Bendersky
+    "https://berthub.eu/articles/index.xml",                     # Bert Hubert
+    # --- BIM / AEC / Construction Tech ---
+    "https://www.autodesk.com/blogs/aec/feed/",                  # Autodesk AEC blog
+    "https://www.autodesk.com/blogs/construction/feed/",         # Autodesk Construction
+    "https://aec-business.com/feed/",                            # AEC Business
+    "https://www.bimcommunity.com/feed/",                        # BIM Community
+    "https://bimchapters.blogspot.com/feeds/posts/default",      # BIM Chapters
+    "https://hnrss.org/newest?q=BIM+OR+AEC+OR+construction+AI&points=30",  # HN BIM/AEC
     # --- Research ---
     "https://arxiv.org/rss/cs.AI",                               # arXiv AI papers
 ]
@@ -127,15 +134,13 @@ Week {week_num}."""
 # NOTE: X counts any URL as 23 chars regardless of length.
 # Link goes last — clean read, then the click.
 
-X_FALLBACK_TEMPLATES = [
-    """Not this ONE.
+X_FALLBACK_TEMPLATE = """Not this ONE.
 
 {main_item} [{source}]
 
 {why_it_matters}
 
-{link} #AI""",
-]
+{link} #AI #{weekly_keyword}"""
 
 # --- LinkedIn fallback templates (rich body) ---
 
@@ -167,7 +172,7 @@ The pattern: {pattern}
 
 What are you seeing from your side? Drop your observations below — the best insights come from the comments.
 
-#AI #MachineLearning #Tech #Innovation #LLM"""
+#AI #MachineLearning #{weekly_keyword} #Tech #Innovation"""
 
 # ---------------------------------------------------------------------------
 # STEP 1: FETCH RSS FEEDS
@@ -239,24 +244,62 @@ def fetch_weekly_items(days=7):
                         except ValueError:
                             continue
 
-                # Score — extract from HN RSS <description> (e.g. "Points: 342")
+                # --- SCORING SYSTEM ---
+                # Final score = HN popularity + source authority + keyword impact
                 score = 0
                 desc_el = entry.find("description")
-                if desc_el is not None and desc_el.text:
-                    import re
-                    pts = re.search(r'Points:\s*(\d+)', desc_el.text)
-                    if pts:
-                        score = int(pts.group(1))
-                    cmts = re.search(r'Comments:\s*(\d+)', desc_el.text)
-                    if cmts:
-                        score += int(cmts.group(1)) // 2  # comments add half weight
+                desc_text = desc_el.text if desc_el is not None and desc_el.text else ""
 
-                # Boost known high-signal sources
+                import re
+
+                # 1. HN POPULARITY (community-validated virality)
+                #    Points = upvotes, Comments = engagement depth
+                pts = re.search(r'Points:\s*(\d+)', desc_text)
+                if pts:
+                    score += int(pts.group(1))          # 1 point = 1 score
+                cmts = re.search(r'Comments:\s*(\d+)', desc_text)
+                if cmts:
+                    score += int(cmts.group(1)) // 2    # comments = half weight
+
+                # 2. SOURCE AUTHORITY BOOST
+                #    Official announcements from labs = guaranteed impact
                 source_domain = url.split("/")[2]
-                if "karpathy" in url:
-                    score += 200  # always boost Karpathy
-                elif source_domain in ("blog.google", "openai.com"):
-                    score += 100  # major lab announcements are big news
+                source_boosts = {
+                    "karpathy": 200,                    # always surface Karpathy
+                    "blog.google": 100,                 # Google AI = big launches
+                    "openai.com": 100,                  # OpenAI = frontier moves
+                    "www.autodesk.com": 80,             # Autodesk = BIM/AEC authority
+                    "aec-business.com": 60,             # AEC industry
+                    "www.bimcommunity.com": 60,         # BIM community
+                }
+                for key, boost in source_boosts.items():
+                    if key in url:
+                        score += boost
+                        break
+
+                # 3. KEYWORD IMPACT BOOST
+                #    Topics that drive clicks, shares, and industry conversation
+                title_lower = title.lower()
+                keyword_boosts = {
+                    # Breakthrough / milestone signals
+                    "breakthrough": 80, "first": 60, "record": 60,
+                    "surpass": 60, "beats": 50, "fastest": 50,
+                    # Scale signals (funding, users, adoption)
+                    "billion": 70, "million": 40, "raises": 50,
+                    "valuation": 60, "acquisition": 50, "ipo": 60,
+                    # Product / release signals
+                    "launches": 50, "releases": 40, "announces": 40,
+                    "open source": 60, "open-source": 60, "free": 30,
+                    # AI-specific impact keywords
+                    "gpt": 40, "llm": 30, "agent": 40, "autonomous": 50,
+                    "human-level": 70, "agi": 60, "safety": 30,
+                    # BIM / AEC keywords
+                    "bim": 50, "revit": 40, "aec": 40, "construction": 30,
+                    "digital twin": 50, "architecture": 30, "autodesk": 40,
+                }
+                for kw, boost in keyword_boosts.items():
+                    if kw in title_lower:
+                        score += boost
 
                 if published and published > cutoff and title:
                     items.append({
@@ -341,6 +384,10 @@ SOURCE_CONTEXT = {
     "www.dwarkeshpatel.com": "Dwarkesh Patel",
     "eli.thegreenplace.net": "Eli Bendersky",
     "berthub.eu": "Bert Hubert",
+    "www.autodesk.com": "Autodesk",
+    "aec-business.com": "AEC Business",
+    "www.bimcommunity.com": "BIM Community",
+    "bimchapters.blogspot.com": "BIM Chapters",
 }
 
 # Why-it-matters one-liners by source (used in fallback when no LLM)
@@ -361,6 +408,10 @@ WHY_CONTEXT = {
     "Mitchell Hashimoto": "Infrastructure that scales.",
     "Dan Abramov": "Frontend is getting an AI upgrade.",
     "Dynomight": "Data-driven takes that cut through the noise.",
+    "Autodesk": "The AEC industry's AI transformation starts here.",
+    "AEC Business": "Construction tech is having its moment.",
+    "BIM Community": "BIM + AI is reshaping how we design and build.",
+    "BIM Chapters": "Practical BIM workflows that save real hours.",
 }
 
 
@@ -386,9 +437,48 @@ def pick_diverse_items(items, count=5):
     return picked
 
 
+def extract_weekly_keyword(items):
+    """Extract the dominant topic keyword from this week's top items for #weeklykeyword."""
+    if not items:
+        return "Tech"
+
+    # Combine top item titles
+    combined = " ".join(it["title"].lower() for it in items[:5])
+
+    # Keyword → hashtag mapping, checked in priority order
+    keyword_map = [
+        # BIM / AEC
+        (["bim", "revit", "autodesk"], "BIM"),
+        (["construction", "aec", "building"], "ConstructionTech"),
+        (["digital twin"], "DigitalTwin"),
+        (["architecture", "architect"], "Architecture"),
+        # AI categories
+        (["gpt", "chatgpt", "openai"], "GPT"),
+        (["claude", "anthropic"], "Claude"),
+        (["gemini", "google ai"], "Gemini"),
+        (["agent", "autonomous", "agentic"], "AIAgents"),
+        (["open source", "open-source"], "OpenSource"),
+        (["robot", "humanoid", "embodied"], "Robotics"),
+        (["vision", "image", "video", "veo", "sora"], "GenAI"),
+        (["llm", "language model", "transformer"], "LLM"),
+        (["funding", "raises", "valuation", "ipo"], "AIFunding"),
+        (["safety", "alignment", "regulation"], "AISafety"),
+        (["benchmark", "eval"], "AIBenchmarks"),
+        (["code", "coding", "developer", "vibe"], "VibeCoding"),
+        # Broad
+        (["ai"], "AI"),
+    ]
+
+    for keywords, hashtag in keyword_map:
+        for kw in keywords:
+            if kw in combined:
+                return hashtag
+
+    return "Tech"
+
+
 def generate_x_post(items, week_num):
-    """Generate X post: TLDR, 1 top story only."""
-    import random
+    """Generate X post: TLDR, 1 top story only, with #weeklykeyword."""
 
     items_text = "\n".join(f"- {it['title']} ({it['source']})" for it in items)
     post = ollama_generate(X_OLLAMA_PROMPT.format(items=items_text, week_num=week_num))
@@ -403,15 +493,15 @@ def generate_x_post(items, week_num):
     main = picked[0]
     src = source_label(main["source"])
     why = WHY_CONTEXT.get(src, "This one's worth your attention.")
-
     link = main.get("link", "")
+    weekly_keyword = extract_weekly_keyword(items)
 
-    template = random.choice(X_FALLBACK_TEMPLATES)
-    return template.format(
+    return X_FALLBACK_TEMPLATE.format(
         main_item=shorten(main["title"], 120),
         source=src,
         why_it_matters=why,
         link=link,
+        weekly_keyword=weekly_keyword,
     ).strip()
 
 
@@ -463,9 +553,12 @@ def generate_linkedin_post(items, week_num):
         "The gap between AI haves and have-nots is widening every week.",
     ]
 
+    weekly_keyword = extract_weekly_keyword(items)
+
     return LINKEDIN_FALLBACK_TEMPLATE.format(
         hook=hook,
         pattern=random.choice(patterns),
+        weekly_keyword=weekly_keyword,
         **blocks,
     ).strip()
 
