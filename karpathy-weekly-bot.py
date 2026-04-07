@@ -90,21 +90,32 @@ OLLAMA_MODEL = "llama3"  # change to mistral, phi3, etc.
 # PROMPTS — X (TLDR: 1 top story) and LinkedIn (rich deep dive)
 # ---------------------------------------------------------------------------
 
-X_OLLAMA_PROMPT = """You are a sharp AI commentator on X/Twitter.
-One story. One take. Make it count.
+X_OLLAMA_PROMPT = """You are a sharp AI commentator on X.
+
+ALGORITHM CONTEXT (design your post for these signals):
+- Replies are worth 27x a like. Conversation (reply→reply) = 150x.
+- Bookmarks = 10x a like. Make it worth saving.
+- NO external links (50-90% reach penalty). Link goes in reply.
+- First 30-60 min engagement velocity decides total reach.
+- Text-only outperforms video on X by 30%.
+- Max 2 hashtags. More = spam signal.
 
 Here are this week's AI updates:
 {items}
 
-Pick THE single most important or surprising story.
-Write ONE tweet (max 280 chars) that:
-1. Names the story clearly
-2. Explains WHY it matters in one sentence
-3. Ends with a bold take or question
-4. Includes #AI
+Pick THE single most important story. Write ONE tweet (max 260 chars):
 
-Do NOT list multiple items. One story, one take, one tweet.
-Week {week_num}."""
+STRUCTURE (use PAS — Problem/Agitation/Solution or contrarian take):
+1. Hook: Bold claim, specific stat, or "Everyone thinks X, but Y"
+2. Core: Name the story + one sentence WHY it matters
+3. Closer: End with a QUESTION that drives replies (150x multiplier)
+
+The question at the end is critical — it triggers the reply→reply
+conversation loop that 150x boosts reach.
+
+Do NOT use generic hooks like "you won't believe" or "huge news."
+Use SPECIFIC curiosity: exact numbers, named players, concrete stakes.
+No links. Max 2 hashtags. Week {week_num}."""
 
 LINKEDIN_OLLAMA_PROMPT = """You are a thoughtful AI industry analyst on LinkedIn.
 You write posts that busy professionals actually read.
@@ -134,9 +145,11 @@ Week {week_num}."""
 # NOTE: X counts any URL as 23 chars regardless of length.
 # Link goes last — clean read, then the click.
 
-# NOTE: X algorithm penalizes external links 50-90% reach reduction.
-# Link goes in a REPLY, not the main post. Main post = pure text.
-# Max 2 hashtags — more signals spam to the algorithm.
+# --- X POST DESIGN (algorithm-optimized) ---
+# No links (50-90% penalty). Link in reply only.
+# Ends with question (reply = 27x, conversation = 150x).
+# Max 2 hashtags. Text-only (30% > video on X).
+# Designed for bookmarks (10x) — make it worth saving.
 
 X_FALLBACK_TEMPLATE = """Not this ONE.
 
@@ -144,39 +157,69 @@ X_FALLBACK_TEMPLATE = """Not this ONE.
 
 {why_it_matters}
 
+{question}
+
 #AI #{weekly_keyword}"""
 
 X_REPLY_TEMPLATE = """Source: {link}"""
 
-# --- LinkedIn fallback templates (rich body) ---
+# Questions designed to trigger reply→reply conversations (150x boost)
+REPLY_TRIGGER_QUESTIONS = [
+    "What's your take — hype or real?",
+    "How does this change what you're building?",
+    "Will this matter in 6 months? Why or why not?",
+    "Who benefits most from this?",
+    "What's everyone missing about this?",
+    "Agree or disagree — and why?",
+    "What would you build with this?",
+    "Is this the one we'll look back on?",
+]
+
+# --- LinkedIn POST DESIGN (algorithm-optimized) ---
+# Hook must be under 130 chars (mobile "see more" cutoff).
+# Saves = 5x likes. Meaningful comments (15+ words) = 15x likes.
+# Dwell time is key — longer post = more time on post = better reach.
+# Sweet spot: 1,300-2,500 chars. Carousels dominate but text is MVP.
+# Reply to first 20-30 comments within 1 hour.
+# Max 3 hashtags. Question at end drives 32% more comments.
 
 LINKEDIN_FALLBACK_TEMPLATE = """{hook}
 
-This week in AI — the 4 stories that actually matter:
+Not this ONE — the 4 AI stories worth your time this week:
+
+━━━━━━━━━━━━━━━
 
 1/ {item1_title}
 {item1_source}
-{item1_why}
+
+↳ {item1_why}
 {item1_link}
 
 2/ {item2_title}
 {item2_source}
-{item2_why}
+
+↳ {item2_why}
 {item2_link}
 
 3/ {item3_title}
 {item3_source}
-{item3_why}
+
+↳ {item3_why}
 {item3_link}
 
 4/ {item4_title}
 {item4_source}
-{item4_why}
+
+↳ {item4_why}
 {item4_link}
 
-The pattern: {pattern}
+━━━━━━━━━━━━━━━
 
-What are you seeing from your side? Drop your observations below — the best insights come from the comments.
+The thread connecting all 4: {pattern}
+
+Save this post if you want to reference it later.
+
+Which of these 4 changes what you're working on? Tell me in the comments — the best takes always come from the replies.
 
 #AI #{weekly_keyword} #Tech"""
 
@@ -505,11 +548,15 @@ def generate_x_post(items, week_num):
     link = main.get("link", "")
     weekly_keyword = extract_weekly_keyword(items)
 
+    import random
+    question = random.choice(REPLY_TRIGGER_QUESTIONS)
+
     post_text = X_FALLBACK_TEMPLATE.format(
         main_item=shorten(main["title"], 120),
         source=src,
         why_it_matters=why,
         weekly_keyword=weekly_keyword,
+        question=question,
     ).strip()
 
     reply_text = X_REPLY_TEMPLATE.format(link=link).strip() if link else ""
