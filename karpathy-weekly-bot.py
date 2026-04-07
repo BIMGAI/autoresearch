@@ -48,18 +48,30 @@ from pathlib import Path
 
 FEEDS = [
     # --- High-signal: pre-filtered by popularity ---
-    "https://hnrss.org/best?count=15&points=100",               # HN best, 100+ points only
+    "https://hnrss.org/best?count=15&points=100",               # HN best, 100+ points
     "https://hnrss.org/newest?q=AI+OR+LLM+OR+GPT&points=50",   # HN AI posts, 50+ points
-    # --- Karpathy (always include) ---
+    # --- Karpathy (always include, boosted) ---
     "https://karpathy.bearblog.dev/feed/",
     "https://github.com/karpathy.atom",
     "https://github.com/karpathy/autoresearch/releases.atom",
-    # --- Major AI labs (official blogs = big announcements only) ---
-    "https://blog.google/technology/ai/rss/",                    # Google AI blog
-    "https://openai.com/blog/rss.xml",                           # OpenAI blog
-    # --- Builder community ---
-    "https://simonwillison.net/atom/everything/",                # Simon Willison
-    "https://lilianweng.github.io/index.xml",                    # Lilian Weng (OpenAI)
+    # --- Major AI labs (official = big announcements) ---
+    "https://blog.google/technology/ai/rss/",                    # Google AI
+    "https://openai.com/blog/rss.xml",                           # OpenAI
+    # --- From Karpathy's curated 92 feeds (AI/tech picks) ---
+    "https://simonwillison.net/atom/everything/",                # Simon Willison (AI tools)
+    "https://lilianweng.github.io/index.xml",                    # Lilian Weng (OpenAI research)
+    "https://minimaxir.com/index.xml",                           # Max Woolf (AI/ML)
+    "https://garymarcus.substack.com/feed",                      # Gary Marcus (AI criticism)
+    "https://geohot.github.io/blog/feed.xml",                    # George Hotz (tinygrad)
+    "https://gwern.substack.com/feed",                           # Gwern (deep research)
+    "https://dynomight.net/feed.xml",                            # Dynomight (data/tech)
+    "https://pluralistic.net/feed/",                             # Cory Doctorow (tech policy)
+    "https://mitchellh.com/feed.xml",                            # Mitchell Hashimoto (infra)
+    "https://lucumr.pocoo.org/feed.atom",                        # Armin Ronacher (Flask/Rust)
+    "https://overreacted.io/rss.xml",                            # Dan Abramov (React)
+    "https://www.dwarkeshpatel.com/feed",                        # Dwarkesh Patel (AI interviews)
+    "https://eli.thegreenplace.net/feeds/all.atom.xml",          # Eli Bendersky (compilers/AI)
+    "https://berthub.eu/articles/index.xml",                     # Bert Hubert (DNS/tech)
     # --- Research ---
     "https://arxiv.org/rss/cs.AI",                               # arXiv AI papers
 ]
@@ -112,16 +124,35 @@ End with 3-5 hashtags on their own line.
 Week {week_num}."""
 
 # --- X fallback templates (TLDR: 1 story + link) ---
+# NOTE: X counts any URL as 23 chars regardless of length.
+# Link goes last — clean read, then the click.
 
 X_FALLBACK_TEMPLATES = [
-    """{main_item}
+    """This just satisfies differently.
+
+{main_item}
 
 {why_it_matters}
 
-{link}
-#AI""",
+{link} #AI""",
 
-    """The AI story of the week:
+    """Not clickbait. Just the #1 AI story this week.
+
+{main_item} [{source}]
+
+{why_it_matters}
+
+{link}""",
+
+    """Everyone's talking about this one.
+
+{main_item}
+
+{why_it_matters}
+
+{link} #AI""",
+
+    """The AI drop that broke the feed:
 
 {main_item} [{source}]
 
@@ -129,7 +160,7 @@ X_FALLBACK_TEMPLATES = [
 
 {link} #AI #Tech""",
 
-    """If you only track one AI story this week:
+    """This will age well.
 
 {main_item}
 
@@ -324,25 +355,44 @@ def shorten(title, max_len=60):
 SOURCE_CONTEXT = {
     "blog.google": "Google",
     "openai.com": "OpenAI",
-    "anthropic.com": "Anthropic",
     "github.com": "GitHub",
     "hnrss.org": "Hacker News",
     "simonwillison.net": "Simon Willison",
     "lilianweng.github.io": "Lilian Weng",
     "arxiv.org": "arXiv",
     "karpathy.bearblog.dev": "Karpathy",
+    "minimaxir.com": "Max Woolf",
+    "garymarcus.substack.com": "Gary Marcus",
+    "geohot.github.io": "George Hotz",
+    "gwern.substack.com": "Gwern",
+    "dynomight.net": "Dynomight",
+    "pluralistic.net": "Cory Doctorow",
+    "mitchellh.com": "Mitchell Hashimoto",
+    "lucumr.pocoo.org": "Armin Ronacher",
+    "overreacted.io": "Dan Abramov",
+    "www.dwarkeshpatel.com": "Dwarkesh Patel",
+    "eli.thegreenplace.net": "Eli Bendersky",
+    "berthub.eu": "Bert Hubert",
 }
 
 # Why-it-matters one-liners by source (used in fallback when no LLM)
 WHY_CONTEXT = {
     "Google": "Google is shipping AI infrastructure others will build on for years.",
     "OpenAI": "OpenAI continues to push the frontier of what LLMs can do.",
-    "Anthropic": "Anthropic is betting on safety-first AI that still performs.",
     "Hacker News": "The builder community is paying attention — and building.",
     "Karpathy": "When Karpathy ships, the whole field takes notes.",
     "Simon Willison": "The tools layer is maturing fast.",
     "arXiv": "New research is closing the gap between theory and production.",
     "GitHub": "Open source is moving faster than most companies.",
+    "Gary Marcus": "The AI skeptic the industry can't ignore.",
+    "George Hotz": "Building from scratch — no frameworks, no excuses.",
+    "Gwern": "The deepest research you'll read this month.",
+    "Dwarkesh Patel": "The conversations shaping how we think about AI.",
+    "Max Woolf": "Practical AI that actually ships.",
+    "Cory Doctorow": "Tech policy meets reality.",
+    "Mitchell Hashimoto": "Infrastructure that scales.",
+    "Dan Abramov": "Frontend is getting an AI upgrade.",
+    "Dynomight": "Data-driven takes that cut through the noise.",
 }
 
 
