@@ -96,12 +96,31 @@ Format options:
 Be genuinely funny. Real info + humor = shareable + valuable.
 End with a one-liner that lands. Week {week_num}."""
 
-FALLBACK_TEMPLATE = """This Week in AI, Vol. {week_num}:
+FALLBACK_TEMPLATES = [
+    """AI Weekly #{week_num}
 
 {bullets}
 
-The machines are busy. Are you?
-#AI #Tech #LLM"""
+The machines shipped more this week than most teams do in a quarter.
+
+#AI #LLM #Tech""",
+
+    """What AI shipped this week (Vol. {week_num}):
+
+{bullets}
+
+Your move, humans.
+
+#AI #Tech #LLM""",
+
+    """AI dispatch #{week_num} — things that happened while you were in meetings:
+
+{bullets}
+
+Back to your spreadsheets.
+
+#AI #LLM""",
+]
 
 # ---------------------------------------------------------------------------
 # STEP 1: FETCH RSS FEEDS
@@ -224,10 +243,32 @@ def generate_with_ollama(items, week_num):
     return None
 
 
+def shorten(title, max_len=60):
+    """Shorten title at word boundary, add ... if truncated."""
+    title = title.strip()
+    if len(title) <= max_len:
+        return title
+    truncated = title[:max_len].rsplit(" ", 1)[0]
+    return truncated.rstrip(",.;:") + "..."
+
+
 def generate_fallback(items, week_num):
     """Simple template fallback when Ollama isn't available."""
-    bullets = "\n".join(f"• {it['title'][:50]}" for it in items[:3])
-    return FALLBACK_TEMPLATE.format(week_num=week_num, bullets=bullets).strip()
+    # Pick top 3 items, prefer variety of sources
+    seen_sources = set()
+    picked = []
+    for it in items:
+        src = it["source"]
+        if src not in seen_sources or len(picked) < 3:
+            picked.append(it)
+            seen_sources.add(src)
+        if len(picked) == 3:
+            break
+
+    bullets = "\n".join(f"• {shorten(it['title'])}" for it in picked)
+    import random
+    template = random.choice(FALLBACK_TEMPLATES)
+    return template.format(week_num=week_num, bullets=bullets).strip()
 
 
 def generate_post(items, week_num):
