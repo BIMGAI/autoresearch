@@ -134,13 +134,19 @@ Week {week_num}."""
 # NOTE: X counts any URL as 23 chars regardless of length.
 # Link goes last — clean read, then the click.
 
+# NOTE: X algorithm penalizes external links 50-90% reach reduction.
+# Link goes in a REPLY, not the main post. Main post = pure text.
+# Max 2 hashtags — more signals spam to the algorithm.
+
 X_FALLBACK_TEMPLATE = """Not this ONE.
 
 {main_item} [{source}]
 
 {why_it_matters}
 
-{link} #AI #{weekly_keyword}"""
+#AI #{weekly_keyword}"""
+
+X_REPLY_TEMPLATE = """Source: {link}"""
 
 # --- LinkedIn fallback templates (rich body) ---
 
@@ -172,7 +178,7 @@ The pattern: {pattern}
 
 What are you seeing from your side? Drop your observations below — the best insights come from the comments.
 
-#AI #MachineLearning #{weekly_keyword} #Tech #Innovation"""
+#AI #{weekly_keyword} #Tech"""
 
 # ---------------------------------------------------------------------------
 # STEP 1: FETCH RSS FEEDS
@@ -245,61 +251,63 @@ def fetch_weekly_items(days=7):
                             continue
 
                 # --- SCORING SYSTEM ---
-                # Final score = HN popularity + source authority + keyword impact
+                # Principle: let the crowd decide. HN points are the only
+                # reliable free signal for virality. Everything else is a
+                # small tiebreaker, not an override.
+                #
+                # AUDIT NOTES (why this design):
+                # - HN points = community-validated. Thousands of technical
+                #   people voted. Trust the crowd over keyword heuristics.
+                # - Comments = engagement depth. High comments = conversation
+                #   starter = better post material.
+                # - Recency bonus = engagement velocity matters. A 200-point
+                #   post from today beats a 300-point post from 5 days ago.
+                # - Source bonus is SMALL (max 15% of a decent HN score).
+                #   Prevents one source from always dominating.
+                # - NO keyword bonuses. Keywords are gameable and arbitrary.
+                #   "breakthrough" in title != actual breakthrough.
+
+                import re
                 score = 0
                 desc_el = entry.find("description")
                 desc_text = desc_el.text if desc_el is not None and desc_el.text else ""
-
-                import re
-
-                # 1. HN POPULARITY (community-validated virality)
-                #    Points = upvotes, Comments = engagement depth
-                pts = re.search(r'Points:\s*(\d+)', desc_text)
-                if pts:
-                    score += int(pts.group(1))          # 1 point = 1 score
-                cmts = re.search(r'Comments:\s*(\d+)', desc_text)
-                if cmts:
-                    score += int(cmts.group(1)) // 2    # comments = half weight
-
-                # 2. SOURCE AUTHORITY BOOST
-                #    Official announcements from labs = guaranteed impact
                 source_domain = url.split("/")[2]
-                source_boosts = {
-                    "karpathy": 200,                    # always surface Karpathy
-                    "blog.google": 100,                 # Google AI = big launches
-                    "openai.com": 100,                  # OpenAI = frontier moves
-                    "www.autodesk.com": 80,             # Autodesk = BIM/AEC authority
-                    "aec-business.com": 60,             # AEC industry
-                    "www.bimcommunity.com": 60,         # BIM community
+
+                # 1. COMMUNITY SIGNAL (primary — 80% of score weight)
+                #    HN points = upvotes from technical community
+                #    Comments = depth of discussion (weighted less)
+                pts_match = re.search(r'Points:\s*(\d+)', desc_text)
+                cmts_match = re.search(r'Comments:\s*(\d+)', desc_text)
+                hn_points = int(pts_match.group(1)) if pts_match else 0
+                hn_comments = int(cmts_match.group(1)) if cmts_match else 0
+                score += hn_points + (hn_comments // 3)
+
+                # 2. RECENCY BONUS (rewards engagement velocity)
+                #    Today's post gets +50, yesterday -25, 2 days ago +0
+                #    Prevents stale high-point posts from always winning
+                if published:
+                    days_ago = (datetime.datetime.now() - published).days
+                    recency = max(0, 50 - (days_ago * 25))
+                    score += recency
+
+                # 3. SOURCE TRUST (small tiebreaker — max +40)
+                #    Not "authority boost" — just breaks ties between
+                #    similar-scored items from different sources
+                source_trust = {
+                    "karpathy": 40,
+                    "blog.google": 30, "openai.com": 30,
+                    "www.autodesk.com": 25,
+                    "aec-business.com": 20, "www.bimcommunity.com": 20,
                 }
-                for key, boost in source_boosts.items():
+                for key, trust in source_trust.items():
                     if key in url:
-                        score += boost
+                        score += trust
                         break
 
-                # 3. KEYWORD IMPACT BOOST
-                #    Topics that drive clicks, shares, and industry conversation
-                title_lower = title.lower()
-                keyword_boosts = {
-                    # Breakthrough / milestone signals
-                    "breakthrough": 80, "first": 60, "record": 60,
-                    "surpass": 60, "beats": 50, "fastest": 50,
-                    # Scale signals (funding, users, adoption)
-                    "billion": 70, "million": 40, "raises": 50,
-                    "valuation": 60, "acquisition": 50, "ipo": 60,
-                    # Product / release signals
-                    "launches": 50, "releases": 40, "announces": 40,
-                    "open source": 60, "open-source": 60, "free": 30,
-                    # AI-specific impact keywords
-                    "gpt": 40, "llm": 30, "agent": 40, "autonomous": 50,
-                    "human-level": 70, "agi": 60, "safety": 30,
-                    # BIM / AEC keywords
-                    "bim": 50, "revit": 40, "aec": 40, "construction": 30,
-                    "digital twin": 50, "architecture": 30, "autodesk": 40,
-                }
-                for kw, boost in keyword_boosts.items():
-                    if kw in title_lower:
-                        score += boost
+                # Non-HN sources without points get a base score
+                # so they can still appear if no HN posts this week
+                if hn_points == 0 and source_domain not in ("hnrss.org",):
+                    score += 30  # base visibility for blog/lab posts
 
                 if published and published > cutoff and title:
                     items.append({
@@ -478,17 +486,18 @@ def extract_weekly_keyword(items):
 
 
 def generate_x_post(items, week_num):
-    """Generate X post: TLDR, 1 top story only, with #weeklykeyword."""
+    """Generate X post + reply link. Returns (post_text, reply_text)."""
 
     items_text = "\n".join(f"- {it['title']} ({it['source']})" for it in items)
     post = ollama_generate(X_OLLAMA_PROMPT.format(items=items_text, week_num=week_num))
     if post:
-        return post
+        link = items[0].get("link", "") if items else ""
+        return post, f"Source: {link}" if link else ""
 
     # Fallback
     picked = pick_diverse_items(items, 5)
     if not picked:
-        return "Quiet week in AI. Enjoy it while it lasts. #AI"
+        return "Quiet week in AI. Enjoy it while it lasts. #AI", ""
 
     main = picked[0]
     src = source_label(main["source"])
@@ -496,13 +505,16 @@ def generate_x_post(items, week_num):
     link = main.get("link", "")
     weekly_keyword = extract_weekly_keyword(items)
 
-    return X_FALLBACK_TEMPLATE.format(
+    post_text = X_FALLBACK_TEMPLATE.format(
         main_item=shorten(main["title"], 120),
         source=src,
         why_it_matters=why,
-        link=link,
         weekly_keyword=weekly_keyword,
     ).strip()
+
+    reply_text = X_REPLY_TEMPLATE.format(link=link).strip() if link else ""
+
+    return post_text, reply_text
 
 
 def generate_linkedin_post(items, week_num):
@@ -804,10 +816,13 @@ def main():
 
     # Step 2: Generate X post (TLDR — 1 story)
     x_text = None
+    x_reply = None
     if do_x:
         print("\n[2/5] Generating X post (TLDR)...")
-        x_text = generate_x_post(items, week_num)
-        print(f"\n--- X POST ({len(x_text)} chars) ---\n{x_text}\n---\n")
+        x_text, x_reply = generate_x_post(items, week_num)
+        print(f"\n--- X POST ({len(x_text)} chars) ---\n{x_text}\n---")
+        if x_reply:
+            print(f"--- X REPLY (link) ---\n{x_reply}\n---\n")
 
     # Step 3: Generate LinkedIn post (rich body)
     li_text = None
@@ -825,8 +840,13 @@ def main():
     if args.post:
         print("[5/5] Posting...")
         if do_x and x_text:
-            print("  Posting to X...")
+            print("  Posting to X (no link in main post — avoids algo penalty)...")
+            # Post main text (no link = full reach)
             url = post_to_x(x_text, card_path)
+            if url and x_reply:
+                # Reply with source link (doesn't hurt parent post reach)
+                print("  Posting reply with source link...")
+                post_to_x(x_reply)
             if url:
                 print(f"  X: {url}")
             else:
