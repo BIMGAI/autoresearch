@@ -47,24 +47,21 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 FEEDS = [
-    # --- Karpathy ---
+    # --- High-signal: pre-filtered by popularity ---
+    "https://hnrss.org/best?count=15&points=100",               # HN best, 100+ points only
+    "https://hnrss.org/newest?q=AI+OR+LLM+OR+GPT&points=50",   # HN AI posts, 50+ points
+    # --- Karpathy (always include) ---
     "https://karpathy.bearblog.dev/feed/",
     "https://github.com/karpathy.atom",
     "https://github.com/karpathy/autoresearch/releases.atom",
-    "https://github.com/karpathy/nanochat/releases.atom",
-    "https://github.com/karpathy/llm.c/releases.atom",
-    # --- Trending AI / Tech ---
-    "https://hnrss.org/best?count=20",                          # Hacker News best
-    "https://rsshub.app/twitter/user/OpenAI",                   # OpenAI
-    "https://rsshub.app/twitter/user/AnthropicAI",              # Anthropic
-    "https://blog.google/technology/ai/rss/",                   # Google AI blog
-    "https://openai.com/blog/rss.xml",                          # OpenAI blog
-    "https://www.anthropic.com/feed.xml",                       # Anthropic blog
-    "https://simonwillison.net/atom/everything/",               # Simon Willison
-    "https://lilianweng.github.io/index.xml",                   # Lilian Weng (OpenAI)
-    "https://www.tldrai.com/feed.xml",                          # TLDR AI newsletter
-    "https://github.com/trending.atom",                         # GitHub trending
-    "https://arxiv.org/rss/cs.AI",                              # arXiv AI papers
+    # --- Major AI labs (official blogs = big announcements only) ---
+    "https://blog.google/technology/ai/rss/",                    # Google AI blog
+    "https://openai.com/blog/rss.xml",                           # OpenAI blog
+    # --- Builder community ---
+    "https://simonwillison.net/atom/everything/",                # Simon Willison
+    "https://lilianweng.github.io/index.xml",                    # Lilian Weng (OpenAI)
+    # --- Research ---
+    "https://arxiv.org/rss/cs.AI",                               # arXiv AI papers
 ]
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
@@ -114,14 +111,15 @@ End with 3-5 hashtags on their own line.
 
 Week {week_num}."""
 
-# --- X fallback templates (TLDR: 1 story) ---
+# --- X fallback templates (TLDR: 1 story + link) ---
 
 X_FALLBACK_TEMPLATES = [
     """{main_item}
 
 {why_it_matters}
 
-This is the one to watch this week. #AI""",
+{link}
+#AI""",
 
     """The AI story of the week:
 
@@ -129,13 +127,15 @@ This is the one to watch this week. #AI""",
 
 {why_it_matters}
 
-#AI #Tech""",
+{link} #AI #Tech""",
 
-    """If you only read one AI story this week, make it this:
+    """If you only track one AI story this week:
 
 {main_item}
 
-{why_it_matters} #AI""",
+{why_it_matters}
+
+{link} #AI""",
 ]
 
 # --- LinkedIn fallback templates (rich body) ---
@@ -147,18 +147,22 @@ This week in AI — the 4 stories that actually matter:
 1/ {item1_title}
 {item1_source}
 {item1_why}
+{item1_link}
 
 2/ {item2_title}
 {item2_source}
 {item2_why}
+{item2_link}
 
 3/ {item3_title}
 {item3_source}
 {item3_why}
+{item3_link}
 
 4/ {item4_title}
 {item4_source}
 {item4_why}
+{item4_link}
 
 The pattern: {pattern}
 
@@ -236,12 +240,32 @@ def fetch_weekly_items(days=7):
                         except ValueError:
                             continue
 
+                # Score — extract from HN RSS <description> (e.g. "Points: 342")
+                score = 0
+                desc_el = entry.find("description")
+                if desc_el is not None and desc_el.text:
+                    import re
+                    pts = re.search(r'Points:\s*(\d+)', desc_el.text)
+                    if pts:
+                        score = int(pts.group(1))
+                    cmts = re.search(r'Comments:\s*(\d+)', desc_el.text)
+                    if cmts:
+                        score += int(cmts.group(1)) // 2  # comments add half weight
+
+                # Boost known high-signal sources
+                source_domain = url.split("/")[2]
+                if "karpathy" in url:
+                    score += 200  # always boost Karpathy
+                elif source_domain in ("blog.google", "openai.com"):
+                    score += 100  # major lab announcements are big news
+
                 if published and published > cutoff and title:
                     items.append({
                         "title": title,
                         "link": link.strip(),
                         "date": published.strftime("%b %d"),
-                        "source": url.split("/")[2],
+                        "source": source_domain,
+                        "score": score,
                     })
         except (URLError, ET.ParseError, Exception) as e:
             print(f"  WARN: failed to fetch {url}: {e}")
@@ -255,9 +279,15 @@ def fetch_weekly_items(days=7):
             seen.add(key)
             unique.append(item)
 
-    # Sort by date descending
-    unique.sort(key=lambda x: x["date"], reverse=True)
-    return unique[:15]  # cap at 15 items
+    # Sort by score (virality) descending, then date
+    unique.sort(key=lambda x: (-x["score"], x["date"]))
+
+    if unique:
+        print(f"  Top ranked:")
+        for it in unique[:5]:
+            print(f"    [{it['score']:>4}pts] {it['title'][:55]} ({it['source']})")
+
+    return unique[:15]
 
 
 # ---------------------------------------------------------------------------
@@ -356,11 +386,14 @@ def generate_x_post(items, week_num):
     src = source_label(main["source"])
     why = WHY_CONTEXT.get(src, "This one's worth your attention.")
 
+    link = main.get("link", "")
+
     template = random.choice(X_FALLBACK_TEMPLATES)
     return template.format(
         main_item=shorten(main["title"], 120),
         source=src,
         why_it_matters=why,
+        link=link,
     ).strip()
 
 
@@ -392,10 +425,12 @@ def generate_linkedin_post(items, week_num):
     def item_block(it, num):
         src = source_label(it["source"])
         why = WHY_CONTEXT.get(src, "Worth watching.")
+        link = it.get("link", "")
         return {
             f"item{num}_title": it["title"],
             f"item{num}_source": f"via {src} — {it['date']}",
             f"item{num}_why": why,
+            f"item{num}_link": f"Read: {link}" if link else "",
         }
 
     blocks = {}
@@ -407,6 +442,7 @@ def generate_linkedin_post(items, week_num):
         blocks[f"item{i}_title"] = "—"
         blocks[f"item{i}_source"] = ""
         blocks[f"item{i}_why"] = ""
+        blocks[f"item{i}_link"] = ""
 
     patterns = [
         "AI is moving from research demos to production infrastructure — fast.",
