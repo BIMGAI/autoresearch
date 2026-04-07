@@ -218,10 +218,7 @@ LINKEDIN_FALLBACK_TEMPLATE = """{hook}
 
 The thread connecting all 4: {pattern}
 
-♻️ Repost if your network needs to see this.
-💾 Save for reference.
-
-Which angle matters most for YOUR work? Tell me below — the best takes always come from the comments.
+Which of these 4 angles matters most for what you're building right now?
 
 #AI #{weekly_keyword} #Tech"""
 
@@ -376,27 +373,34 @@ def fetch_weekly_items(days=7):
             seen.add(key)
             unique.append(item)
 
-    # --- SHOCKWAVE ANALYSIS ---
-    # Measure cross-source echo: same story on multiple feeds = shockwave
+    # --- FIX 1: SHOCKWAVE with stopword filtering ---
+    STOPWORDS = {"the", "a", "an", "is", "are", "was", "were", "in", "on",
+                 "at", "to", "for", "of", "and", "or", "but", "with", "by",
+                 "from", "as", "it", "its", "this", "that", "how", "what",
+                 "why", "new", "most", "more", "will", "can", "has", "have",
+                 "not", "no", "all", "about", "just", "than", "now", "up",
+                 "out", "do", "does", "be", "been", "i", "my", "you", "your",
+                 "we", "our", "they", "their", "he", "she", "who"}
+
     for item in unique:
-        title_words = set(item["title"].lower().split())
+        title_words = set(item["title"].lower().split()) - STOPWORDS
         echo_count = 0
         for other in unique:
             if other is item:
                 continue
-            other_words = set(other["title"].lower().split())
+            other_words = set(other["title"].lower().split()) - STOPWORDS
             overlap = len(title_words & other_words)
-            if overlap >= 3:  # 3+ shared words = same story
+            if overlap >= 2:  # 2+ meaningful shared words = same story
                 echo_count += 1
-        item["shockwave"] = echo_count  # 0=single source, 2+=viral ripple
+        item["shockwave"] = echo_count
 
-    # Comment-to-point ratio = controversy/engagement depth
-    for item in unique:
-        pts = item["hn_points"] or 1
-        cmts = item["hn_comments"]
-        item["discussion_ratio"] = round(cmts / pts, 2) if pts > 0 else 0
+    # --- FIX 7: Category classification AFTER dedup ---
+    EXPERT_SOURCES = {"simonwillison.net", "lilianweng.github.io",
+                      "gwern.substack.com", "garymarcus.substack.com",
+                      "geohot.github.io", "minimaxir.com",
+                      "eli.thegreenplace.net", "dynomight.net",
+                      "berthub.eu", "mitchellh.com"}
 
-    # Classify each item into categories
     for item in unique:
         t = item["title"].lower()
         src = item["source"]
@@ -404,27 +408,23 @@ def fetch_weekly_items(days=7):
 
         # AEC / BIM
         aec_keywords = ["bim", "revit", "aec", "construction", "architecture",
-                        "digital twin", "autodesk", "building", "forma",
-                        "clash detection", "structural", "mep", "infrastructure"]
-        if any(kw in t for kw in aec_keywords) or src in (
-            "www.autodesk.com", "aec-business.com", "www.bimcommunity.com",
-            "bimchapters.blogspot.com"):
+                        "digital twin", "autodesk", "building performance",
+                        "clash detection", "structural", "mep", "forma"]
+        aec_sources = ("www.autodesk.com", "aec-business.com",
+                       "www.bimcommunity.com", "bimchapters.blogspot.com")
+        if any(kw in t for kw in aec_keywords) or src in aec_sources:
             item["categories"].append("aec")
 
-        # Innovative (new releases, open source, first-of-kind)
-        innov_keywords = ["open source", "open-source", "apache", "launches",
-                         "releases", "introduces", "new model", "first",
-                         "novel", "on-device", "from scratch"]
+        # Innovative
+        innov_keywords = ["open source", "open-source", "apache 2.0",
+                         "launches", "releases", "introduces", "on-device",
+                         "from scratch", "new model"]
         if any(kw in t for kw in innov_keywords):
             item["categories"].append("innovative")
 
-        # Underrated signal: low score but high discussion ratio or from
-        # niche expert source (not mainstream HN viral)
-        if item["score"] < 200 and (item["discussion_ratio"] > 0.5
-            or src in ("simonwillison.net", "lilianweng.github.io",
-                       "gwern.substack.com", "garymarcus.substack.com",
-                       "geohot.github.io", "minimaxir.com",
-                       "eli.thegreenplace.net")):
+        # --- FIX 5: Underrated = expert source + moderate score ---
+        # NOT discussion ratio (high ratio = controversial, not underrated)
+        if item["score"] < 300 and src in EXPERT_SOURCES:
             item["categories"].append("underrated")
 
     # Sort by score descending
@@ -433,8 +433,8 @@ def fetch_weekly_items(days=7):
     if unique:
         print(f"  Top ranked:")
         for it in unique[:6]:
-            sw = "🌊" * it.get("shockwave", 0) or "·"
-            cats = ",".join(it.get("categories", [])) or "general"
+            sw = "⚡" if it.get("shockwave", 0) >= 3 else "🌊" if it.get("shockwave", 0) >= 2 else "📡" if it.get("shockwave", 0) >= 1 else "·"
+            cats = ",".join(it.get("categories", [])) or "—"
             print(f"    [{it['score']:>4}] {sw} [{cats}] {it['title'][:50]}")
 
     return unique[:15]
@@ -498,29 +498,66 @@ SOURCE_CONTEXT = {
     "bimchapters.blogspot.com": "BIM Chapters",
 }
 
-# Why-it-matters one-liners by source (used in fallback when no LLM)
-WHY_CONTEXT = {
-    "Google": "Google is shipping AI infrastructure others will build on for years.",
-    "OpenAI": "OpenAI continues to push the frontier of what LLMs can do.",
-    "Hacker News": "The builder community is paying attention — and building.",
-    "Karpathy": "When Karpathy ships, the whole field takes notes.",
-    "Simon Willison": "The tools layer is maturing fast.",
-    "arXiv": "New research is closing the gap between theory and production.",
-    "GitHub": "Open source is moving faster than most companies.",
-    "Gary Marcus": "The AI skeptic the industry can't ignore.",
-    "George Hotz": "Building from scratch — no frameworks, no excuses.",
-    "Gwern": "The deepest research you'll read this month.",
-    "Dwarkesh Patel": "The conversations shaping how we think about AI.",
-    "Max Woolf": "Practical AI that actually ships.",
-    "Cory Doctorow": "Tech policy meets reality.",
-    "Mitchell Hashimoto": "Infrastructure that scales.",
-    "Dan Abramov": "Frontend is getting an AI upgrade.",
-    "Dynomight": "Data-driven takes that cut through the noise.",
-    "Autodesk": "The AEC industry's AI transformation starts here.",
-    "AEC Business": "Construction tech is having its moment.",
-    "BIM Community": "BIM + AI is reshaping how we design and build.",
-    "BIM Chapters": "Practical BIM workflows that save real hours.",
-}
+# --- FIX 2: Dynamic why-it-matters per STORY, not per source ---
+# Matches keywords in the title to generate a relevant "why" line.
+# Falls back to source-level context only if no keyword matches.
+
+def why_it_matters(item):
+    """Generate a why-it-matters line based on the story content, not just source."""
+    t = item["title"].lower()
+    src = source_label(item["source"])
+
+    # Keyword-driven why (checked in priority order, first match wins)
+    keyword_why = [
+        # Funding / scale
+        (["billion", "valuation", "raises", "funding", "ipo"],
+         "The money signals where the industry thinks value is going."),
+        (["million users", "million downloads", "stars"],
+         "Adoption at this scale changes the ecosystem for everyone."),
+        # Performance / benchmarks
+        (["human-level", "surpass", "beats", "outperform", "benchmark"],
+         "The performance bar just moved — everything downstream shifts."),
+        (["fastest", "record", "first"],
+         "A new ceiling was set. The race resets from here."),
+        # Open source / access
+        (["open source", "open-source", "apache", "mit license"],
+         "Open access means anyone can build on this — including you."),
+        (["on-device", "local", "edge", "mobile"],
+         "AI is moving off the cloud and onto your hardware."),
+        # Products / launches
+        (["launches", "releases", "announces", "introduces", "ships"],
+         "New capability dropped. First movers get the advantage."),
+        # Safety / regulation / policy
+        (["safety", "alignment", "regulation", "law", "ban", "prescri"],
+         "Policy is catching up to the tech. Watch the regulatory signals."),
+        (["protect", "refuses", "decepti", "hallucinat"],
+         "AI behavior we didn't design for. Worth understanding why."),
+        # AEC / BIM
+        (["bim", "revit", "construction", "building", "architect"],
+         "AEC is getting its AI moment. Early adopters will lead."),
+        (["digital twin", "forma", "clash detection"],
+         "Digital twins + AI = the future of how we design and build."),
+        # Agent / autonomous
+        (["agent", "autonomous", "automat"],
+         "Agents are going from demo to deployment. This is the inflection."),
+    ]
+
+    for keywords, why in keyword_why:
+        if any(kw in t for kw in keywords):
+            return why
+
+    # Fall back to source-level context
+    source_why = {
+        "Google": "Google is shipping infrastructure others will build on.",
+        "OpenAI": "When OpenAI moves, the frontier moves with it.",
+        "Karpathy": "When Karpathy ships, the whole field takes notes.",
+        "Simon Willison": "The tools layer is maturing — fast.",
+        "arXiv": "Research today, production tomorrow.",
+        "Autodesk": "The AEC industry's AI transformation starts here.",
+        "AEC Business": "Construction tech is having its moment.",
+        "BIM Community": "BIM + AI is reshaping how we design and build.",
+    }
+    return source_why.get(src, "Worth your attention this week.")
 
 
 def source_label(source):
@@ -601,7 +638,7 @@ def generate_x_post(items, week_num):
 
     main = picked[0]
     src = source_label(main["source"])
-    why = WHY_CONTEXT.get(src, "This one's worth your attention.")
+    why = why_it_matters(main)
     link = main.get("link", "")
     weekly_keyword = extract_weekly_keyword(items)
 
@@ -689,7 +726,10 @@ def generate_linkedin_post(items, week_num):
         return "Quiet week in AI. That might be the most surprising thing of all."
 
     top, aec, innov, under = pick_by_category(items)
-    hook = "Not this ONE."
+
+    # --- FIX 3: Use full 130 chars for hook — tease the top story ---
+    top_short = shorten(top["title"], 85) if top else "AI"
+    hook = f"Not this ONE. {top_short}"  # brand + story tease in one line
 
     def slot(it, prefix):
         """Build template fields for a slot."""
@@ -702,7 +742,7 @@ def generate_linkedin_post(items, week_num):
         return {
             f"{prefix}_title": it["title"],
             f"{prefix}_source": f"via {src} — {it['date']}",
-            f"{prefix}_why": WHY_CONTEXT.get(src, "Worth watching."),
+            f"{prefix}_why": why_it_matters(it),
             f"{prefix}_link": f"🔗 {link}" if link else "",
             f"{prefix}_shockwave": shockwave_label(it),
         }
@@ -1012,6 +1052,19 @@ def main():
             post_to_linkedin(li_text)
     else:
         print("[5/5] DRY RUN — add --post to publish")
+
+    # --- FIX 6: Reply reminder — the #1 growth lever ---
+    if args.post:
+        print("\n" + "=" * 50)
+        print("⏰ REPLY WINDOW OPEN — next 60 min is critical")
+        print("=" * 50)
+        print("X algo: reply→reply = 150x a like")
+        print("LinkedIn: 15+ word comments = 15x a like")
+        print("")
+        print("Action: Reply to every comment within 1 hour.")
+        print("Ask a follow-up question in each reply to")
+        print("trigger the conversation loop.")
+        print("=" * 50)
 
     print("\nDone.")
 
