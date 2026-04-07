@@ -70,73 +70,101 @@ FEEDS = [
 OLLAMA_URL = "http://localhost:11434/api/generate"
 OLLAMA_MODEL = "llama3"  # change to mistral, phi3, etc.
 
-FUNNY_PROMPT = """You are a sharp weekly AI commentator on X/Twitter.
-Your voice: witty, opinionated, insightful. Like a tech journalist who
-actually builds things. You make complex AI news accessible and interesting.
+# ---------------------------------------------------------------------------
+# PROMPTS — X (TLDR: 1 top story) and LinkedIn (rich deep dive)
+# ---------------------------------------------------------------------------
 
-Here are this week's AI and tech updates:
+X_OLLAMA_PROMPT = """You are a sharp AI commentator on X/Twitter.
+One story. One take. Make it count.
+
+Here are this week's AI updates:
 {items}
 
-Write an X thread (2-3 tweets, separated by ---).
+Pick THE single most important or surprising story.
+Write ONE tweet (max 280 chars) that:
+1. Names the story clearly
+2. Explains WHY it matters in one sentence
+3. Ends with a bold take or question
+4. Includes #AI
 
-TWEET 1 (the hook — max 280 chars):
-- Open with a bold take, surprising stat, or provocative question
-- Must make someone stop scrolling
-- Reference the biggest story of the week
-
-TWEET 2 (the meat — max 280 chars):
-- Cover 2-3 more items with brief WHY-IT-MATTERS context
-- Use "→" arrows to connect headline to implication
-- Show the pattern: what do these stories mean together?
-
-TWEET 3 (the closer — max 280 chars):
-- Your personal take or prediction
-- End with a question to drive replies
-- Include #AI #Tech
-
-Pick the 3-4 most impactful items. For each, add ONE sentence of
-context explaining why it matters — don't just list titles.
-
-Prioritize:
-1. Things that change how people build or use AI
-2. Big releases, papers, or product launches
-3. Karpathy updates (always include if present)
-4. Surprising or counterintuitive developments
-
-Tone: confident, slightly irreverent, genuinely helpful. Not cringe.
+Do NOT list multiple items. One story, one take, one tweet.
 Week {week_num}."""
 
-FALLBACK_TEMPLATES = [
-    """The biggest AI story you missed this week:
+LINKEDIN_OLLAMA_PROMPT = """You are a thoughtful AI industry analyst on LinkedIn.
+You write posts that busy professionals actually read.
+
+Here are this week's AI updates:
+{items}
+
+Write a LinkedIn post (1,500-2,500 chars):
+
+LINE 1 (the hook — under 130 chars, must stop the scroll):
+A bold claim, surprising stat, or counterintuitive take about the #1 story.
+
+THEN blank line, then the body:
+- Lead with the #1 story: what happened, who shipped it, why it matters
+- Cover 3-4 more stories with one paragraph each
+- For each: what happened → why it matters → who should care
+- Connect the dots: what pattern do these stories reveal together?
+- Close with a forward-looking insight or question
+
+Tone: authoritative but accessible. No jargon for jargon's sake.
+Use line breaks generously — LinkedIn rewards scannable posts.
+End with 3-5 hashtags on their own line.
+
+Week {week_num}."""
+
+# --- X fallback templates (TLDR: 1 story) ---
+
+X_FALLBACK_TEMPLATES = [
+    """{main_item}
+
+{why_it_matters}
+
+This is the one to watch this week. #AI""",
+
+    """The AI story of the week:
+
+{main_item} [{source}]
+
+{why_it_matters}
+
+#AI #Tech""",
+
+    """If you only read one AI story this week, make it this:
 
 {main_item}
 
-{context}
-
-Also shipping:
-{secondary_bullets}
-
-What are you building with this? Reply below.
-
-#AI #Tech #LLM""",
-
-    """AI is moving fast. Here's what actually matters from this week:
-
-{bullets_with_context}
-
-The gap between "keeping up" and "falling behind" is now about 7 days.
-
-What caught your eye? #AI #LLM""",
-
-    """Week {week_num} in AI — the signal, not the noise:
-
-{bullets_with_context}
-
-Most people will scroll past this.
-The ones building will bookmark it.
-
-#AI #Tech""",
+{why_it_matters} #AI""",
 ]
+
+# --- LinkedIn fallback templates (rich body) ---
+
+LINKEDIN_FALLBACK_TEMPLATE = """{hook}
+
+This week in AI — the 4 stories that actually matter:
+
+1/ {item1_title}
+{item1_source}
+{item1_why}
+
+2/ {item2_title}
+{item2_source}
+{item2_why}
+
+3/ {item3_title}
+{item3_source}
+{item3_why}
+
+4/ {item4_title}
+{item4_source}
+{item4_why}
+
+The pattern: {pattern}
+
+What are you seeing from your side? Drop your observations below — the best insights come from the comments.
+
+#AI #MachineLearning #Tech #Innovation #LLM"""
 
 # ---------------------------------------------------------------------------
 # STEP 1: FETCH RSS FEEDS
@@ -236,13 +264,9 @@ def fetch_weekly_items(days=7):
 # STEP 2: GENERATE FUNNY POST (Ollama or fallback)
 # ---------------------------------------------------------------------------
 
-def generate_with_ollama(items, week_num):
-    """Generate funny post using local Ollama. Returns None if unavailable."""
+def ollama_generate(prompt):
+    """Call local Ollama. Returns response text or None."""
     import requests
-
-    items_text = "\n".join(f"- {it['title']} ({it['source']})" for it in items)
-    prompt = FUNNY_PROMPT.format(items=items_text, week_num=week_num)
-
     try:
         resp = requests.post(OLLAMA_URL, json={
             "model": OLLAMA_MODEL,
@@ -252,10 +276,9 @@ def generate_with_ollama(items, week_num):
         if resp.status_code == 200:
             return resp.json().get("response", "").strip()
     except requests.ConnectionError:
-        print("  INFO: Ollama not running, using fallback template")
+        print("  INFO: Ollama not running, using fallback")
     except Exception as e:
         print(f"  WARN: Ollama error: {e}, using fallback")
-
     return None
 
 
@@ -280,17 +303,26 @@ SOURCE_CONTEXT = {
     "karpathy.bearblog.dev": "Karpathy",
 }
 
+# Why-it-matters one-liners by source (used in fallback when no LLM)
+WHY_CONTEXT = {
+    "Google": "Google is shipping AI infrastructure others will build on for years.",
+    "OpenAI": "OpenAI continues to push the frontier of what LLMs can do.",
+    "Anthropic": "Anthropic is betting on safety-first AI that still performs.",
+    "Hacker News": "The builder community is paying attention — and building.",
+    "Karpathy": "When Karpathy ships, the whole field takes notes.",
+    "Simon Willison": "The tools layer is maturing fast.",
+    "arXiv": "New research is closing the gap between theory and production.",
+    "GitHub": "Open source is moving faster than most companies.",
+}
+
 
 def source_label(source):
     """Get a clean label for a source domain."""
     return SOURCE_CONTEXT.get(source, source.split(".")[0].title())
 
 
-def generate_fallback(items, week_num):
-    """Generate a rich, detailed post from the week's items."""
-    import random
-
-    # Pick items with source diversity
+def pick_diverse_items(items, count=5):
+    """Pick items with source diversity."""
     seen_sources = set()
     picked = []
     for it in items:
@@ -298,46 +330,96 @@ def generate_fallback(items, week_num):
         if src not in seen_sources:
             picked.append(it)
             seen_sources.add(src)
-        if len(picked) == 5:
+        if len(picked) == count:
             break
-    # Fill remaining slots if needed
     for it in items:
-        if it not in picked and len(picked) < 5:
+        if it not in picked and len(picked) < count:
             picked.append(it)
+    return picked
 
+
+def generate_x_post(items, week_num):
+    """Generate X post: TLDR, 1 top story only."""
+    import random
+
+    items_text = "\n".join(f"- {it['title']} ({it['source']})" for it in items)
+    post = ollama_generate(X_OLLAMA_PROMPT.format(items=items_text, week_num=week_num))
+    if post:
+        return post
+
+    # Fallback
+    picked = pick_diverse_items(items, 5)
     if not picked:
-        return "No AI news this week. That's the news. #AI"
+        return "Quiet week in AI. Enjoy it while it lasts. #AI"
 
     main = picked[0]
-    rest = picked[1:4]
+    src = source_label(main["source"])
+    why = WHY_CONTEXT.get(src, "This one's worth your attention.")
 
-    # Build rich bullets with source attribution
-    bullets_with_context = "\n".join(
-        f"→ {shorten(it['title'], 70)} [{source_label(it['source'])}]"
-        for it in picked[:4]
-    )
-    secondary_bullets = "\n".join(
-        f"→ {shorten(it['title'], 70)} [{source_label(it['source'])}]"
-        for it in rest
-    )
-
-    template = random.choice(FALLBACK_TEMPLATES)
+    template = random.choice(X_FALLBACK_TEMPLATES)
     return template.format(
-        week_num=week_num,
-        main_item=shorten(main["title"], 80),
-        context=f"via {source_label(main['source'])} — {main['date']}",
-        bullets="\n".join(f"• {shorten(it['title'])}" for it in picked[:3]),
-        secondary_bullets=secondary_bullets,
-        bullets_with_context=bullets_with_context,
+        main_item=shorten(main["title"], 120),
+        source=src,
+        why_it_matters=why,
     ).strip()
 
 
-def generate_post(items, week_num):
-    """Generate the weekly post text."""
-    post = generate_with_ollama(items, week_num)
-    if not post:
-        post = generate_fallback(items, week_num)
-    return post
+def generate_linkedin_post(items, week_num):
+    """Generate LinkedIn post: 130-char hook + rich body."""
+    import random
+
+    items_text = "\n".join(f"- {it['title']} ({it['source']})" for it in items)
+    post = ollama_generate(LINKEDIN_OLLAMA_PROMPT.format(items=items_text, week_num=week_num))
+    if post:
+        return post
+
+    # Fallback
+    picked = pick_diverse_items(items, 5)
+    if not picked:
+        return "Quiet week in AI. That might be the most surprising thing of all."
+
+    # Build the hook (under 130 chars for "see more" visibility)
+    main = picked[0]
+    hooks = [
+        f"{source_label(main['source'])} just changed the game. Here's what it means for you.",
+        f"The most important AI development this week isn't what you think.",
+        f"4 AI stories from this week that will matter in 6 months.",
+        f"While you were in meetings, AI shipped these 4 things.",
+    ]
+    hook = random.choice(hooks)
+
+    # Build 4 item blocks
+    def item_block(it, num):
+        src = source_label(it["source"])
+        why = WHY_CONTEXT.get(src, "Worth watching.")
+        return {
+            f"item{num}_title": it["title"],
+            f"item{num}_source": f"via {src} — {it['date']}",
+            f"item{num}_why": why,
+        }
+
+    blocks = {}
+    for i, it in enumerate(picked[:4], 1):
+        blocks.update(item_block(it, i))
+
+    # Fill missing slots if less than 4 items
+    for i in range(len(picked) + 1, 5):
+        blocks[f"item{i}_title"] = "—"
+        blocks[f"item{i}_source"] = ""
+        blocks[f"item{i}_why"] = ""
+
+    patterns = [
+        "AI is moving from research demos to production infrastructure — fast.",
+        "The tools are getting simpler, but what you can build with them is getting more complex.",
+        "We're past the 'will AI work?' phase. We're in the 'how fast can we ship?' phase.",
+        "The gap between AI haves and have-nots is widening every week.",
+    ]
+
+    return LINKEDIN_FALLBACK_TEMPLATE.format(
+        hook=hook,
+        pattern=random.choice(patterns),
+        **blocks,
+    ).strip()
 
 
 # ---------------------------------------------------------------------------
@@ -512,49 +594,108 @@ def get_week_number():
     return datetime.date.today().isocalendar()[1]
 
 
+def post_to_linkedin(text):
+    """Post to LinkedIn. Returns True on success. Requires LINKEDIN_ACCESS_TOKEN."""
+    import requests as req
+
+    token = os.environ.get("LINKEDIN_ACCESS_TOKEN")
+    person_urn = os.environ.get("LINKEDIN_PERSON_URN")
+
+    if not token or not person_urn:
+        print("  SKIP LinkedIn: LINKEDIN_ACCESS_TOKEN or LINKEDIN_PERSON_URN not set")
+        return False
+
+    post_data = {
+        "author": person_urn,
+        "lifecycleState": "PUBLISHED",
+        "specificContent": {
+            "com.linkedin.ugc.ShareContent": {
+                "shareCommentary": {"text": text},
+                "shareMediaCategory": "NONE"
+            }
+        },
+        "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"}
+    }
+
+    try:
+        resp = req.post(
+            "https://api.linkedin.com/v2/ugcPosts",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json=post_data,
+        )
+        if resp.status_code in (200, 201):
+            print("  LinkedIn: posted successfully")
+            return True
+        else:
+            print(f"  LinkedIn ERROR: {resp.status_code} {resp.text[:200]}")
+            return False
+    except Exception as e:
+        print(f"  LinkedIn ERROR: {e}")
+        return False
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Karpathy Weekly Bot")
-    parser.add_argument("--post", action="store_true", help="Actually post to X (default: dry run)")
+    parser = argparse.ArgumentParser(description="AI Weekly Bot — X + LinkedIn")
+    parser.add_argument("--post", action="store_true", help="Actually post (default: dry run)")
+    parser.add_argument("--x-only", action="store_true", help="Post to X only")
+    parser.add_argument("--linkedin-only", action="store_true", help="Post to LinkedIn only")
     parser.add_argument("--week", type=int, default=None, help="Override week number")
     parser.add_argument("--days", type=int, default=7, help="Look back N days (default: 7)")
     args = parser.parse_args()
 
+    do_x = not args.linkedin_only
+    do_linkedin = not args.x_only
+
     week_num = args.week or get_week_number()
     week_label = f"Week {week_num}, {datetime.date.today().year}"
 
-    print(f"=== Karpathy Weekly Bot — {week_label} ===\n")
+    print(f"=== AI Weekly Bot — {week_label} ===\n")
 
     # Step 1: Fetch
-    print("[1/4] Fetching RSS feeds...")
+    print("[1/5] Fetching RSS feeds...")
     items = fetch_weekly_items(days=args.days)
     if not items:
         print("  No items found this week. Nothing to post.")
         return
     print(f"  Found {len(items)} items")
     for it in items[:5]:
-        print(f"    {it['date']} | {it['title'][:60]}")
+        print(f"    {it['date']} | {it['title'][:65]}")
 
-    # Step 2: Generate funny post
-    print("\n[2/4] Generating funny post...")
-    post_text = generate_post(items, week_num)
-    print(f"\n--- POST TEXT ---\n{post_text}\n-----------------\n")
+    # Step 2: Generate X post (TLDR — 1 story)
+    x_text = None
+    if do_x:
+        print("\n[2/5] Generating X post (TLDR)...")
+        x_text = generate_x_post(items, week_num)
+        print(f"\n--- X POST ({len(x_text)} chars) ---\n{x_text}\n---\n")
 
-    # Step 3: Generate social card
-    print("[3/4] Generating social card...")
+    # Step 3: Generate LinkedIn post (rich body)
+    li_text = None
+    if do_linkedin:
+        print("[3/5] Generating LinkedIn post (deep dive)...")
+        li_text = generate_linkedin_post(items, week_num)
+        print(f"\n--- LINKEDIN POST ({len(li_text)} chars) ---\n{li_text}\n---\n")
+
+    # Step 4: Generate social card
+    print("[4/5] Generating social card...")
     card_bullets = [it["title"] for it in items[:5]]
     card_path = create_social_card(card_bullets, week_label)
 
-    # Step 4: Post or dry run
+    # Step 5: Post or dry run
     if args.post:
-        print("[4/4] Posting to X...")
-        url = post_to_x(post_text, card_path)
-        if url:
-            print(f"\n  Posted! {url}")
-        else:
-            print("\n  Failed to post. Check credentials and try again.")
+        print("[5/5] Posting...")
+        if do_x and x_text:
+            print("  Posting to X...")
+            url = post_to_x(x_text, card_path)
+            if url:
+                print(f"  X: {url}")
+            else:
+                print("  X: failed")
+
+        if do_linkedin and li_text:
+            print("  Posting to LinkedIn...")
+            post_to_linkedin(li_text)
     else:
-        print("[4/4] DRY RUN — add --post to actually tweet")
-        print("  To test: python karpathy-weekly-bot.py --post")
+        print("[5/5] DRY RUN — add --post to publish")
 
     print("\nDone.")
 
