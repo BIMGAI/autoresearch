@@ -70,56 +70,72 @@ FEEDS = [
 OLLAMA_URL = "http://localhost:11434/api/generate"
 OLLAMA_MODEL = "llama3"  # change to mistral, phi3, etc.
 
-FUNNY_PROMPT = """You are a funny weekly AI and tech commentator on X/Twitter.
-Your style: SNL Weekend Update meets tech Twitter. Deadpan, absurd analogies,
-self-deprecating humor. Genuine insight under the jokes. Never cringe.
+FUNNY_PROMPT = """You are a sharp weekly AI commentator on X/Twitter.
+Your voice: witty, opinionated, insightful. Like a tech journalist who
+actually builds things. You make complex AI news accessible and interesting.
 
-Here are this week's top AI and tech updates:
+Here are this week's AI and tech updates:
 {items}
 
-Write a single X post (under 270 chars so there's room for hashtags).
-Or if there's a lot of news, write a thread (2-3 tweets, each under 270 chars,
-separated by ---).
+Write an X thread (2-3 tweets, separated by ---).
 
-Pick the most impactful 2-3 items from the list. Prioritize:
-1. Anything genuinely new or surprising
+TWEET 1 (the hook — max 280 chars):
+- Open with a bold take, surprising stat, or provocative question
+- Must make someone stop scrolling
+- Reference the biggest story of the week
+
+TWEET 2 (the meat — max 280 chars):
+- Cover 2-3 more items with brief WHY-IT-MATTERS context
+- Use "→" arrows to connect headline to implication
+- Show the pattern: what do these stories mean together?
+
+TWEET 3 (the closer — max 280 chars):
+- Your personal take or prediction
+- End with a question to drive replies
+- Include #AI #Tech
+
+Pick the 3-4 most impactful items. For each, add ONE sentence of
+context explaining why it matters — don't just list titles.
+
+Prioritize:
+1. Things that change how people build or use AI
 2. Big releases, papers, or product launches
 3. Karpathy updates (always include if present)
-4. Trending repos or viral discussions
+4. Surprising or counterintuitive developments
 
-Format options:
-- "This Week in AI" (bullets with punchlines)
-- "ai.diff" (git diff +/- jokes)
-- "BREAKING" (deadpan fake news anchor)
-- "Scoreboard" (AI labs vs. rest of us)
-
-Be genuinely funny. Real info + humor = shareable + valuable.
-End with a one-liner that lands. Week {week_num}."""
+Tone: confident, slightly irreverent, genuinely helpful. Not cringe.
+Week {week_num}."""
 
 FALLBACK_TEMPLATES = [
-    """AI Weekly #{week_num}
+    """The biggest AI story you missed this week:
 
-{bullets}
+{main_item}
 
-The machines shipped more this week than most teams do in a quarter.
+{context}
 
-#AI #LLM #Tech""",
+Also shipping:
+{secondary_bullets}
 
-    """What AI shipped this week (Vol. {week_num}):
-
-{bullets}
-
-Your move, humans.
+What are you building with this? Reply below.
 
 #AI #Tech #LLM""",
 
-    """AI dispatch #{week_num} — things that happened while you were in meetings:
+    """AI is moving fast. Here's what actually matters from this week:
 
-{bullets}
+{bullets_with_context}
 
-Back to your spreadsheets.
+The gap between "keeping up" and "falling behind" is now about 7 days.
 
-#AI #LLM""",
+What caught your eye? #AI #LLM""",
+
+    """Week {week_num} in AI — the signal, not the noise:
+
+{bullets_with_context}
+
+Most people will scroll past this.
+The ones building will bookmark it.
+
+#AI #Tech""",
 ]
 
 # ---------------------------------------------------------------------------
@@ -252,23 +268,68 @@ def shorten(title, max_len=60):
     return truncated.rstrip(",.;:") + "..."
 
 
+SOURCE_CONTEXT = {
+    "blog.google": "Google",
+    "openai.com": "OpenAI",
+    "anthropic.com": "Anthropic",
+    "github.com": "GitHub",
+    "hnrss.org": "Hacker News",
+    "simonwillison.net": "Simon Willison",
+    "lilianweng.github.io": "Lilian Weng",
+    "arxiv.org": "arXiv",
+    "karpathy.bearblog.dev": "Karpathy",
+}
+
+
+def source_label(source):
+    """Get a clean label for a source domain."""
+    return SOURCE_CONTEXT.get(source, source.split(".")[0].title())
+
+
 def generate_fallback(items, week_num):
-    """Simple template fallback when Ollama isn't available."""
-    # Pick top 3 items, prefer variety of sources
+    """Generate a rich, detailed post from the week's items."""
+    import random
+
+    # Pick items with source diversity
     seen_sources = set()
     picked = []
     for it in items:
         src = it["source"]
-        if src not in seen_sources or len(picked) < 3:
+        if src not in seen_sources:
             picked.append(it)
             seen_sources.add(src)
-        if len(picked) == 3:
+        if len(picked) == 5:
             break
+    # Fill remaining slots if needed
+    for it in items:
+        if it not in picked and len(picked) < 5:
+            picked.append(it)
 
-    bullets = "\n".join(f"• {shorten(it['title'])}" for it in picked)
-    import random
+    if not picked:
+        return "No AI news this week. That's the news. #AI"
+
+    main = picked[0]
+    rest = picked[1:4]
+
+    # Build rich bullets with source attribution
+    bullets_with_context = "\n".join(
+        f"→ {shorten(it['title'], 70)} [{source_label(it['source'])}]"
+        for it in picked[:4]
+    )
+    secondary_bullets = "\n".join(
+        f"→ {shorten(it['title'], 70)} [{source_label(it['source'])}]"
+        for it in rest
+    )
+
     template = random.choice(FALLBACK_TEMPLATES)
-    return template.format(week_num=week_num, bullets=bullets).strip()
+    return template.format(
+        week_num=week_num,
+        main_item=shorten(main["title"], 80),
+        context=f"via {source_label(main['source'])} — {main['date']}",
+        bullets="\n".join(f"• {shorten(it['title'])}" for it in picked[:3]),
+        secondary_bullets=secondary_bullets,
+        bullets_with_context=bullets_with_context,
+    ).strip()
 
 
 def generate_post(items, week_num):
