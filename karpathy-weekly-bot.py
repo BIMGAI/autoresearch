@@ -185,41 +185,43 @@ REPLY_TRIGGER_QUESTIONS = [
 
 LINKEDIN_FALLBACK_TEMPLATE = """{hook}
 
-The 4 AI stories worth your time this week:
+4 AI stories. 4 angles. The ones that matter this week:
 
 ━━━━━━━━━━━━━━━
 
-1/ {item1_title}
-{item1_source}
+🏆 TOP SIGNAL — the story everyone's talking about
+{top_title}
+{top_source}
+↳ {top_why}
+{top_shockwave}
+{top_link}
 
-↳ {item1_why}
-{item1_link}
+🏗️ AEC × AI — where construction meets intelligence
+{aec_title}
+{aec_source}
+↳ {aec_why}
+{aec_link}
 
-2/ {item2_title}
-{item2_source}
+💡 MOST INNOVATIVE — the one that changes the game
+{innov_title}
+{innov_source}
+↳ {innov_why}
+{innov_link}
 
-↳ {item2_why}
-{item2_link}
-
-3/ {item3_title}
-{item3_source}
-
-↳ {item3_why}
-{item3_link}
-
-4/ {item4_title}
-{item4_source}
-
-↳ {item4_why}
-{item4_link}
+🔍 UNDERRATED — the one you'll wish you caught earlier
+{under_title}
+{under_source}
+↳ {under_why}
+{under_link}
 
 ━━━━━━━━━━━━━━━
 
 The thread connecting all 4: {pattern}
 
-Save this post if you want to reference it later.
+♻️ Repost if your network needs to see this.
+💾 Save for reference.
 
-Which of these 4 changes what you're working on? Tell me in the comments — the best takes always come from the replies.
+Which angle matters most for YOUR work? Tell me below — the best takes always come from the comments.
 
 #AI #{weekly_keyword} #Tech"""
 
@@ -359,6 +361,8 @@ def fetch_weekly_items(days=7):
                         "date": published.strftime("%b %d"),
                         "source": source_domain,
                         "score": score,
+                        "hn_points": hn_points,
+                        "hn_comments": hn_comments,
                     })
         except (URLError, ET.ParseError, Exception) as e:
             print(f"  WARN: failed to fetch {url}: {e}")
@@ -372,13 +376,66 @@ def fetch_weekly_items(days=7):
             seen.add(key)
             unique.append(item)
 
-    # Sort by score (virality) descending, then date
+    # --- SHOCKWAVE ANALYSIS ---
+    # Measure cross-source echo: same story on multiple feeds = shockwave
+    for item in unique:
+        title_words = set(item["title"].lower().split())
+        echo_count = 0
+        for other in unique:
+            if other is item:
+                continue
+            other_words = set(other["title"].lower().split())
+            overlap = len(title_words & other_words)
+            if overlap >= 3:  # 3+ shared words = same story
+                echo_count += 1
+        item["shockwave"] = echo_count  # 0=single source, 2+=viral ripple
+
+    # Comment-to-point ratio = controversy/engagement depth
+    for item in unique:
+        pts = item["hn_points"] or 1
+        cmts = item["hn_comments"]
+        item["discussion_ratio"] = round(cmts / pts, 2) if pts > 0 else 0
+
+    # Classify each item into categories
+    for item in unique:
+        t = item["title"].lower()
+        src = item["source"]
+        item["categories"] = []
+
+        # AEC / BIM
+        aec_keywords = ["bim", "revit", "aec", "construction", "architecture",
+                        "digital twin", "autodesk", "building", "forma",
+                        "clash detection", "structural", "mep", "infrastructure"]
+        if any(kw in t for kw in aec_keywords) or src in (
+            "www.autodesk.com", "aec-business.com", "www.bimcommunity.com",
+            "bimchapters.blogspot.com"):
+            item["categories"].append("aec")
+
+        # Innovative (new releases, open source, first-of-kind)
+        innov_keywords = ["open source", "open-source", "apache", "launches",
+                         "releases", "introduces", "new model", "first",
+                         "novel", "on-device", "from scratch"]
+        if any(kw in t for kw in innov_keywords):
+            item["categories"].append("innovative")
+
+        # Underrated signal: low score but high discussion ratio or from
+        # niche expert source (not mainstream HN viral)
+        if item["score"] < 200 and (item["discussion_ratio"] > 0.5
+            or src in ("simonwillison.net", "lilianweng.github.io",
+                       "gwern.substack.com", "garymarcus.substack.com",
+                       "geohot.github.io", "minimaxir.com",
+                       "eli.thegreenplace.net")):
+            item["categories"].append("underrated")
+
+    # Sort by score descending
     unique.sort(key=lambda x: (-x["score"], x["date"]))
 
     if unique:
         print(f"  Top ranked:")
-        for it in unique[:5]:
-            print(f"    [{it['score']:>4}pts] {it['title'][:55]} ({it['source']})")
+        for it in unique[:6]:
+            sw = "🌊" * it.get("shockwave", 0) or "·"
+            cats = ",".join(it.get("categories", [])) or "general"
+            print(f"    [{it['score']:>4}] {sw} [{cats}] {it['title'][:50]}")
 
     return unique[:15]
 
@@ -564,8 +621,63 @@ def generate_x_post(items, week_num):
     return post_text, reply_text
 
 
+def pick_by_category(items):
+    """Pick 4 items: top score, AEC, innovative, underrated. No repeats."""
+    used = set()
+
+    def best_for(category=None):
+        """Find highest-scored item matching category, not yet used."""
+        for it in items:
+            if id(it) in used:
+                continue
+            if category is None:
+                used.add(id(it))
+                return it
+            if category in it.get("categories", []):
+                used.add(id(it))
+                return it
+        return None
+
+    top = best_for()            # highest score overall
+    aec = best_for("aec")       # best AEC/BIM story
+    innov = best_for("innovative")  # most innovative
+    under = best_for("underrated")  # underrated gem
+
+    # Fill any missing slots with next best available
+    fallbacks = [it for it in items if id(it) not in used]
+    for slot_name in ["aec", "innov", "under"]:
+        val = locals()[slot_name.split("_")[0]] if slot_name != "under" else under
+        if slot_name == "aec":
+            val = aec
+        elif slot_name == "innov":
+            val = innov
+        if val is None and fallbacks:
+            val = fallbacks.pop(0)
+            used.add(id(val))
+            if slot_name == "aec":
+                aec = val
+            elif slot_name == "innov":
+                innov = val
+            else:
+                under = val
+
+    return top, aec, innov, under
+
+
+def shockwave_label(item):
+    """Generate shockwave indicator based on cross-source echo."""
+    sw = item.get("shockwave", 0)
+    if sw >= 3:
+        return "⚡ Shockwave: echoing across 3+ sources"
+    elif sw >= 2:
+        return "🌊 Ripple: picked up by multiple sources"
+    elif sw >= 1:
+        return "📡 Signal: gaining traction"
+    return ""
+
+
 def generate_linkedin_post(items, week_num):
-    """Generate LinkedIn post: 130-char hook + rich body."""
+    """Generate LinkedIn post: 4 categories — Top / AEC / Innovative / Underrated."""
     import random
 
     items_text = "\n".join(f"- {it['title']} ({it['source']})" for it in items)
@@ -573,37 +685,33 @@ def generate_linkedin_post(items, week_num):
     if post:
         return post
 
-    # Fallback
-    picked = pick_diverse_items(items, 5)
-    if not picked:
+    if not items:
         return "Quiet week in AI. That might be the most surprising thing of all."
 
-    # Build the hook (under 130 chars for "see more" visibility)
-    main = picked[0]
+    top, aec, innov, under = pick_by_category(items)
     hook = "Not this ONE."
 
-    # Build 4 item blocks
-    def item_block(it, num):
+    def slot(it, prefix):
+        """Build template fields for a slot."""
+        if not it:
+            return {f"{prefix}_title": "—", f"{prefix}_source": "",
+                    f"{prefix}_why": "", f"{prefix}_link": "",
+                    f"{prefix}_shockwave": ""}
         src = source_label(it["source"])
-        why = WHY_CONTEXT.get(src, "Worth watching.")
         link = it.get("link", "")
         return {
-            f"item{num}_title": it["title"],
-            f"item{num}_source": f"via {src} — {it['date']}",
-            f"item{num}_why": why,
-            f"item{num}_link": f"Read: {link}" if link else "",
+            f"{prefix}_title": it["title"],
+            f"{prefix}_source": f"via {src} — {it['date']}",
+            f"{prefix}_why": WHY_CONTEXT.get(src, "Worth watching."),
+            f"{prefix}_link": f"🔗 {link}" if link else "",
+            f"{prefix}_shockwave": shockwave_label(it),
         }
 
-    blocks = {}
-    for i, it in enumerate(picked[:4], 1):
-        blocks.update(item_block(it, i))
-
-    # Fill missing slots if less than 4 items
-    for i in range(len(picked) + 1, 5):
-        blocks[f"item{i}_title"] = "—"
-        blocks[f"item{i}_source"] = ""
-        blocks[f"item{i}_why"] = ""
-        blocks[f"item{i}_link"] = ""
+    fields = {}
+    fields.update(slot(top, "top"))
+    fields.update(slot(aec, "aec"))
+    fields.update(slot(innov, "innov"))
+    fields.update(slot(under, "under"))
 
     patterns = [
         "AI is moving from research demos to production infrastructure — fast.",
@@ -618,7 +726,7 @@ def generate_linkedin_post(items, week_num):
         hook=hook,
         pattern=random.choice(patterns),
         weekly_keyword=weekly_keyword,
-        **blocks,
+        **fields,
     ).strip()
 
 
