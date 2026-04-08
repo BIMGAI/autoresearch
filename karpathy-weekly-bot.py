@@ -774,20 +774,10 @@ def generate_linkedin_post(items, week_num):
 # STEP 3: GENERATE SOCIAL CARD IMAGE
 # ---------------------------------------------------------------------------
 
-def create_social_card(bullets, week_label, output_path="card.png"):
-    """Generate a 1200x675 branded social card."""
-    try:
-        from PIL import Image, ImageDraw, ImageFont
-    except ImportError:
-        print("  WARN: pip install pillow — skipping card generation")
-        return None
-
-    W, H = 1200, 675
-    img = Image.new("RGB", (W, H), color="#1a1a2e")
-    draw = ImageDraw.Draw(img)
-
-    # Try system fonts, fall back to default
-    title_font = body_font = None
+def _load_fonts():
+    """Load system fonts or fall back to defaults."""
+    from PIL import ImageFont
+    title_font = body_font = label_font = None
     for font_path in [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
         "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
@@ -795,35 +785,109 @@ def create_social_card(bullets, week_label, output_path="card.png"):
     ]:
         if Path(font_path).exists():
             try:
-                from PIL import ImageFont as IF
-                title_font = IF.truetype(font_path, 36)
-                body_font = IF.truetype(font_path.replace("Bold", ""), 24)
+                title_font = ImageFont.truetype(font_path, 42)
+                body_font = ImageFont.truetype(font_path.replace("Bold", ""), 22)
+                label_font = ImageFont.truetype(font_path, 18)
             except Exception:
                 pass
             break
-
     if not title_font:
         title_font = ImageFont.load_default()
-        body_font = ImageFont.load_default()
+        body_font = title_font
+        label_font = title_font
+    return title_font, body_font, label_font
 
-    # Header
-    draw.text((60, 40), f"AI Weekly — {week_label}", fill="#e94560", font=title_font)
-    draw.line([(60, 90), (W - 60, 90)], fill="#e94560", width=2)
 
-    # Bullets
-    y = 115
-    for bullet in bullets[:5]:
-        wrapped = textwrap.fill(f"• {bullet}", width=60)
-        draw.text((60, y), wrapped, fill="#ffffff", font=body_font)
-        line_count = len(wrapped.split("\n"))
-        y += line_count * 30 + 10
+# Slide color schemes per category
+SLIDE_STYLES = {
+    "top":   {"bg": "#1a1a2e", "accent": "#e94560", "emoji": "🏆", "label": "TOP SIGNAL"},
+    "aec":   {"bg": "#1a2e1a", "accent": "#45e980", "emoji": "🏗️", "label": "AEC × AI"},
+    "innov": {"bg": "#1a1a2e", "accent": "#45a5e9", "emoji": "💡", "label": "MOST INNOVATIVE"},
+    "under": {"bg": "#2e1a2e", "accent": "#c945e9", "emoji": "🔍", "label": "UNDERRATED"},
+}
 
-    # Footer
-    draw.text((60, H - 50), "AI Weekly Digest", fill="#888888", font=body_font)
+
+def create_carousel_slide(category, title, source, why, week_label, output_path):
+    """Generate a single 1080x1080 carousel slide."""
+    from PIL import Image, ImageDraw
+    title_font, body_font, label_font = _load_fonts()
+    style = SLIDE_STYLES.get(category, SLIDE_STYLES["top"])
+
+    W, H = 1080, 1080
+    img = Image.new("RGB", (W, H), color=style["bg"])
+    draw = ImageDraw.Draw(img)
+
+    # Top bar with accent color
+    draw.rectangle([(0, 0), (W, 6)], fill=style["accent"])
+
+    # Brand + week
+    draw.text((60, 30), "Not this ONE.", fill=style["accent"], font=title_font)
+    draw.text((60, 85), week_label, fill="#888888", font=label_font)
+
+    # Category label
+    draw.text((60, 130), f"{style['emoji']}  {style['label']}", fill=style["accent"], font=label_font)
+
+    # Separator
+    draw.line([(60, 170), (W - 60, 170)], fill=style["accent"], width=2)
+
+    # Title (main headline, wrapped)
+    y = 200
+    wrapped_title = textwrap.fill(title, width=35)
+    for line in wrapped_title.split("\n")[:5]:
+        draw.text((60, y), line, fill="#ffffff", font=title_font)
+        y += 52
+
+    # Source
+    y += 20
+    draw.text((60, y), source, fill="#888888", font=body_font)
+    y += 40
+
+    # Why it matters
+    y += 10
+    draw.text((60, y), "↳ Why it matters:", fill=style["accent"], font=label_font)
+    y += 30
+    wrapped_why = textwrap.fill(why, width=48)
+    for line in wrapped_why.split("\n")[:3]:
+        draw.text((60, y), line, fill="#cccccc", font=body_font)
+        y += 30
+
+    # Bottom bar
+    draw.rectangle([(0, H - 6), (W, H)], fill=style["accent"])
+
+    # Slide number hint
+    slide_nums = {"top": "1/4", "aec": "2/4", "innov": "3/4", "under": "4/4"}
+    draw.text((W - 100, H - 40), slide_nums.get(category, ""), fill="#666666", font=label_font)
 
     img.save(output_path)
-    print(f"  Card saved: {output_path}")
     return output_path
+
+
+def create_carousel(top, aec, innov, under, week_label):
+    """Generate 4 carousel slides for LinkedIn. Returns list of paths."""
+    try:
+        from PIL import Image
+    except ImportError:
+        print("  WARN: pip install pillow — skipping carousel")
+        return []
+
+    slides = []
+    for cat, item in [("top", top), ("aec", aec), ("innov", innov), ("under", under)]:
+        if not item:
+            continue
+        src = source_label(item["source"])
+        path = f"slide_{cat}.png"
+        create_carousel_slide(
+            category=cat,
+            title=item["title"],
+            source=f"via {src} — {item['date']}",
+            why=why_it_matters(item),
+            week_label=week_label,
+            output_path=path,
+        )
+        slides.append(path)
+        print(f"  Slide saved: {path}")
+
+    return slides
 
 
 # ---------------------------------------------------------------------------
@@ -1026,20 +1090,24 @@ def main():
         li_text = generate_linkedin_post(items, week_num)
         print(f"\n--- LINKEDIN POST ({len(li_text)} chars) ---\n{li_text}\n---\n")
 
-    # Step 4: Generate social card
-    print("[4/5] Generating social card...")
-    card_bullets = [it["title"] for it in items[:5]]
-    card_path = create_social_card(card_bullets, week_label)
+    # Step 4: Generate visuals
+    #   X = text-only (30% more engagement than images on X)
+    #   LinkedIn = 4-slide carousel (6.6% engagement, highest format)
+    carousel_slides = []
+    if do_linkedin:
+        print("[4/5] Generating LinkedIn carousel (4 slides)...")
+        top, aec, innov, under = pick_by_category(items)
+        carousel_slides = create_carousel(top, aec, innov, under, week_label)
+    else:
+        print("[4/5] Skipping visuals (X = text-only for best reach)")
 
     # Step 5: Post or dry run
     if args.post:
         print("[5/5] Posting...")
         if do_x and x_text:
-            print("  Posting to X (no link in main post — avoids algo penalty)...")
-            # Post main text (no link = full reach)
-            url = post_to_x(x_text, card_path)
+            print("  Posting to X (text-only — 30% better reach than images)...")
+            url = post_to_x(x_text)  # NO image on X
             if url and x_reply:
-                # Reply with source link (doesn't hurt parent post reach)
                 print("  Posting reply with source link...")
                 post_to_x(x_reply)
             if url:
@@ -1049,7 +1117,12 @@ def main():
 
         if do_linkedin and li_text:
             print("  Posting to LinkedIn...")
+            # TODO: LinkedIn carousel upload requires image upload API
+            # For now, post text. Carousel images saved locally for manual upload.
             post_to_linkedin(li_text)
+            if carousel_slides:
+                print(f"  Carousel slides saved: {', '.join(carousel_slides)}")
+                print("  TIP: Upload slides manually as LinkedIn carousel for 6.6% engagement")
     else:
         print("[5/5] DRY RUN — add --post to publish")
 
